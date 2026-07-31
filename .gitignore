@@ -1,0 +1,40 @@
+# Raw datasets (large, local-only)
+/Dataset/
+/dataset/
+/datasets/
+/data/raw/
+/data/external/
+
+# Local-only documentation requested by the project owner
+/README.md
+
+# Generated data and experiment artifacts
+/artifacts/
+/cache/
+/checkpoints/
+/outputs/
+/runs/
+/wandb/
+/mlruns/
+
+# Python
+/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+configs/local*.yaml

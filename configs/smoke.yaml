@@ -1,0 +1,58 @@
+seed: 2026
+run_name: smoke
+
+data:
+  root: Dataset
+  train_files: [train_extracted.csv]
+  validation_files: [validation_extracted.csv]
+  test_files: [test_extracted.csv]
+  target_column: class
+  expected_num_features: 3780
+  num_classes: 178
+  block_size_mb: 16
+  batch_size: 64
+  stats_path: runs/smoke/info/train_stats.npz
+  split_manifest: null
+
+preprocessing:
+  max_rows: 2048
+  min_std: 1.0e-6
+
+model:
+  name: moeddi
+  expert_hidden_dim: 64
+  expert_dim: 32
+  expert_dropout: 0.05
+  router_hidden_dim: 32
+  router_top_k: 2
+  include_generalist: true
+  classifier_hidden_dim: 64
+  classifier_dropout: 0.05
+
+loss:
+  name: focal
+  gamma: 2.0
+  class_weighting: none
+  effective_beta: 0.9999
+  label_smoothing: 0.0
+  moe_balance_weight: 0.01
+  router_z_weight: 0.001
+
+training:
+  epochs: 1
+  max_rows: 512
+  max_steps_per_epoch: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  gradient_accumulation_steps: 1
+  mixed_precision: false
+  early_stopping_patience: 2
+  selection_metric: macro_f1
+  device: auto
+  run_dir: runs/smoke
+
+evaluation:
+  max_rows: 512
+  top_k: [1, 3, 5]
+  calibration_bins: 15
