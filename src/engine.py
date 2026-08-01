@@ -212,6 +212,53 @@ def resolve_run_dir(config: dict) -> Path:
     return resolve_project_path(config, value)
 
 
+def _load_pretrained_weights(
+    model: nn.Module,
+    config: dict,
+    schema: DatasetSchema,
+    statistics: TrainStatistics,
+    device: torch.device,
+) -> Path | None:
+    value = config["training"].get("pretrained_checkpoint")
+    if not value:
+        return None
+
+    checkpoint_path = resolve_project_path(config, value)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Pretrained checkpoint not found: {checkpoint_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Unsupported pretrained checkpoint format: {checkpoint_path}")
+
+    # Project checkpoints contain model_state and validation metadata. A plain
+    # PyTorch state_dict is also accepted for interoperability.
+    if "model_state" in checkpoint:
+        model_state = checkpoint["model_state"]
+        checkpoint_fingerprint = checkpoint.get("schema_fingerprint")
+        if checkpoint_fingerprint is not None and checkpoint_fingerprint != schema.fingerprint:
+            raise ValueError("Pretrained checkpoint schema does not match current dataset")
+        checkpoint_labels = checkpoint.get("label_values")
+        if checkpoint_labels is not None and not np.array_equal(
+            checkpoint_labels, statistics.label_values
+        ):
+            raise ValueError(
+                "Pretrained checkpoint label vocabulary does not match training statistics"
+            )
+    else:
+        model_state = checkpoint
+
+    try:
+        model.load_state_dict(model_state)
+    except RuntimeError as error:
+        raise ValueError(
+            "Pretrained weights are incompatible with the configured model architecture: "
+            f"{checkpoint_path}"
+        ) from error
+    print(f"[train] Loaded pretrained weights: {checkpoint_path}", flush=True)
+    return checkpoint_path
+
+
 def train(config: dict) -> Path:
     set_seed(config["seed"])
     schema = load_and_validate_schema(config)
@@ -219,6 +266,7 @@ def train(config: dict) -> Path:
     statistics = TrainStatistics.load(stats_path, schema)
     device = select_device(config["training"].get("device", "auto"))
     model = build_model(config, schema).to(device)
+    pretrained_path = _load_pretrained_weights(model, config, schema, statistics, device)
     criterion = build_loss(config, statistics.class_counts, device)
     training_config = config["training"]
     optimizer = torch.optim.AdamW(
@@ -264,6 +312,9 @@ def train(config: dict) -> Path:
             "model": config["model"]["name"],
             "parameters": count_parameters(model),
             "device": str(device),
+            "pretrained_checkpoint": (
+                str(pretrained_path) if pretrained_path is not None else None
+            ),
         },
     )
 
@@ -386,6 +437,9 @@ def train(config: dict) -> Path:
             "label_values": statistics.label_values,
             "config": config,
             "validation": validation,
+            "pretrained_checkpoint": (
+                str(pretrained_path) if pretrained_path is not None else None
+            ),
         }
         _save_checkpoint(run_dir / "last.pt", checkpoint)
         selection = float(validation[training_config["selection_metric"]])

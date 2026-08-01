@@ -27,6 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--weight-decay", type=float)
+    parser.add_argument(
+        "--pretrain",
+        "--pretrained-checkpoint",
+        dest="pretrained_checkpoint",
+        help=(
+            "Checkpoint whose model weights are loaded before training. "
+            "Optimizer and scheduler start fresh."
+        ),
+    )
     parser.add_argument("--seed", type=int)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--max-train-rows", type=int)
@@ -57,6 +66,7 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
         ("training", "epochs"): args.epochs,
         ("training", "learning_rate"): args.learning_rate,
         ("training", "weight_decay"): args.weight_decay,
+        ("training", "pretrained_checkpoint"): args.pretrained_checkpoint,
         ("training", "device"): args.device,
         ("training", "max_rows"): args.max_train_rows,
         ("training", "max_steps_per_epoch"): args.max_steps_per_epoch,

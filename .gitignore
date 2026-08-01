@@ -7,6 +7,7 @@
 
 # Local-only documentation requested by the project owner
 /README.md
+/submission/
 
 # Generated data and experiment artifacts
 /artifacts/

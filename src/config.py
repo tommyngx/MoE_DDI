@@ -39,6 +39,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_steps_per_epoch": None,
         "learning_rate": 3e-4,
         "weight_decay": 1e-4,
+        "pretrained_checkpoint": None,
         "gradient_clip_norm": 1.0,
         "gradient_accumulation_steps": 1,
         "mixed_precision": True,
