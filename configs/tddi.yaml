@@ -43,7 +43,7 @@ training:
   gradient_clip_norm: 1.0
   gradient_accumulation_steps: 1
   mixed_precision: true
-  early_stopping_patience: 8
+  early_stopping_patience: 200
   selection_metric: macro_f1
   device: auto
   run_dir: runs/tddi_seed2026
