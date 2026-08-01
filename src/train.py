@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from config import load_config
+from config import load_config, resolve_project_path, shared_stats_path
 from engine import load_and_validate_schema, prepare_statistics, resolve_run_dir, train
 
 
@@ -22,6 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-file", help="Test CSV filename inside input-dir")
     parser.add_argument("--run-dir", help="Output folder for checkpoints, info, and plots")
     parser.add_argument("--run-name")
+    parser.add_argument(
+        "--stats-path",
+        help="Custom reusable preprocessing cache (default: <data>/train_stats.npz)",
+    )
     parser.add_argument("--model", choices=["moeddi", "tddi_mlp", "mlp", "linear"])
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--epochs", type=int)
@@ -46,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
+    configured_stats_path = resolve_project_path(config, config["data"]["stats_path"])
     if args.data_dir:
         config["data"]["root"] = str(Path(args.data_dir).expanduser().resolve())
     if args.train_file:
@@ -82,7 +87,20 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
 
     run_dir = resolve_run_dir(config)
     config["training"]["run_dir"] = str(run_dir)
-    config["data"]["stats_path"] = str(run_dir / "info" / "train_stats.npz")
+    if args.stats_path:
+        config["data"]["stats_path"] = str(Path(args.stats_path).expanduser().resolve())
+    else:
+        config["data"]["stats_path"] = str(shared_stats_path(config))
+        data_root = Path(config["data"]["root"])
+        config["data"]["stats_fallback_paths"] = list(
+            dict.fromkeys(
+                [
+                    str(run_dir / "info" / "train_stats.npz"),
+                    str(configured_stats_path),
+                    str(data_root / ".moeddi_cache" / "train_stats.npz"),
+                ]
+            )
+        )
     return config
 
 
@@ -100,6 +118,7 @@ def main() -> None:
                 "run_dir": str(run_dir),
                 "best_checkpoint": str(best_checkpoint),
                 "last_checkpoint": str(run_dir / "last.pt"),
+                "statistics_cache": config["data"]["stats_path"],
                 "training_plot": str(run_dir / "plots" / "training_curves.png"),
                 "paper_plots": str(run_dir / "plots" / "paper"),
                 "summary": str(run_dir / "summary.txt"),

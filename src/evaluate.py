@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from config import load_config
+from config import load_config, shared_stats_path
 from engine import evaluate_checkpoint
 
 
@@ -14,6 +14,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data", "--input-dir", dest="data_dir")
     parser.add_argument("--run-dir")
+    parser.add_argument("--stats-path")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--max-rows", type=int)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"])
@@ -25,7 +26,10 @@ def main() -> None:
     if args.run_dir:
         run_dir = Path(args.run_dir).expanduser().resolve()
         config["training"]["run_dir"] = str(run_dir)
-        config["data"]["stats_path"] = str(run_dir / "info" / "train_stats.npz")
+    if args.stats_path:
+        config["data"]["stats_path"] = str(Path(args.stats_path).expanduser().resolve())
+    elif args.data_dir:
+        config["data"]["stats_path"] = str(shared_stats_path(config))
     if args.batch_size is not None:
         config["data"]["batch_size"] = args.batch_size
     if args.max_rows is not None:

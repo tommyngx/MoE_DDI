@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -85,12 +87,70 @@ def make_stream(
     )
 
 
+def _statistics_cache_fingerprint(config: dict, schema: DatasetSchema) -> str:
+    manifest_value = config["data"].get("split_manifest")
+    paths = _all_paths(config) if manifest_value else split_paths(config, "train")
+
+    def identity(path: Path) -> dict:
+        stat = path.stat()
+        return {
+            "path": str(path.resolve()),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+        }
+
+    payload = {
+        "schema": schema.fingerprint,
+        "files": [identity(path) for path in paths],
+        "num_classes": config["data"]["num_classes"],
+        "max_rows": config["preprocessing"].get("max_rows"),
+        "min_std": config["preprocessing"].get("min_std", 1e-6),
+        "split_manifest": (
+            identity(resolve_project_path(config, manifest_value))
+            if manifest_value
+            else None
+        ),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 def prepare_statistics(config: dict, schema: DatasetSchema, *, force: bool = False) -> Path:
     stats_path = resolve_project_path(config, config["data"]["stats_path"])
+    cache_fingerprint = _statistics_cache_fingerprint(config, schema)
     if stats_path.exists() and not force:
-        TrainStatistics.load(stats_path, schema)
-        print(f"[prepare] Reusing training statistics: {stats_path}", flush=True)
-        return stats_path
+        try:
+            cached_statistics = TrainStatistics.load(stats_path, schema)
+            if cached_statistics.cache_fingerprint in {None, cache_fingerprint}:
+                print(f"[prepare] Reusing training statistics: {stats_path}", flush=True)
+                return stats_path
+            print(
+                "[prepare] Dataset or preprocessing settings changed; rebuilding cache.",
+                flush=True,
+            )
+        except (KeyError, OSError, ValueError) as error:
+            print(f"[prepare] Statistics cache is invalid; rebuilding ({error}).", flush=True)
+    if not stats_path.exists() and not force:
+        for fallback_value in config["data"].get("stats_fallback_paths", []):
+            fallback_path = resolve_project_path(config, fallback_value)
+            if fallback_path == stats_path or not fallback_path.is_file():
+                continue
+            try:
+                cached_statistics = TrainStatistics.load(fallback_path, schema)
+            except (KeyError, OSError, ValueError):
+                continue
+            if cached_statistics.cache_fingerprint not in {None, cache_fingerprint}:
+                continue
+            cached_statistics = replace(
+                cached_statistics,
+                cache_fingerprint=cache_fingerprint,
+            )
+            cached_statistics.save(stats_path)
+            print(
+                f"[prepare] Migrated reusable statistics cache: {fallback_path} -> {stats_path}",
+                flush=True,
+            )
+            return stats_path
     print("[prepare] Discovering the training label vocabulary...", flush=True)
     label_values = discover_label_values(
         split_paths(config, "train"),
@@ -116,9 +176,9 @@ def prepare_statistics(config: dict, schema: DatasetSchema, *, force: bool = Fal
         schema,
         num_classes=config["data"]["num_classes"],
         min_std=config["preprocessing"].get("min_std", 1e-6),
+        cache_fingerprint=cache_fingerprint,
     )
     stats.save(stats_path)
-    schema.write_json(stats_path.with_name("schema.json"))
     print(f"[prepare] Saved statistics: {stats_path}", flush=True)
     return stats_path
 

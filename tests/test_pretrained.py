@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from engine import _load_pretrained_weights
-from train import build_parser
+from train import apply_overrides, build_parser
 
 
 def _config(tmp_path, checkpoint):
@@ -18,6 +18,26 @@ def _config(tmp_path, checkpoint):
 def test_train_parser_accepts_pretrain_alias():
     args = build_parser().parse_args(["--pretrain", "runs/old/best.pt"])
     assert args.pretrained_checkpoint == "runs/old/best.pt"
+
+
+def test_train_uses_shared_statistics_cache_in_data_folder(tmp_path):
+    data_dir = tmp_path / "dataset"
+    args = build_parser().parse_args(["--data", str(data_dir)])
+    config = {
+        "_project_root": str(tmp_path),
+        "run_name": "test",
+        "data": {"root": "unused", "stats_path": "runs/test/info/train_stats.npz"},
+        "training": {"run_dir": "runs/test"},
+        "evaluation": {},
+        "model": {"name": "moeddi"},
+        "seed": 1,
+    }
+
+    resolved = apply_overrides(config, args)
+
+    assert resolved["data"]["stats_path"] == str(
+        data_dir / "train_stats.npz"
+    )
 
 
 def test_load_pretrained_project_checkpoint(tmp_path):

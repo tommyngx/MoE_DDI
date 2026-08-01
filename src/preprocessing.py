@@ -17,6 +17,7 @@ class TrainStatistics:
     label_values: np.ndarray
     count: int
     schema_fingerprint: str
+    cache_fingerprint: str | None = None
 
     def normalize(self, features: np.ndarray) -> np.ndarray:
         return (features - self.mean) / self.std
@@ -32,6 +33,7 @@ class TrainStatistics:
             label_values=self.label_values.astype(np.int64),
             count=np.asarray(self.count, dtype=np.int64),
             schema_fingerprint=np.asarray(self.schema_fingerprint),
+            cache_fingerprint=np.asarray(self.cache_fingerprint or ""),
         )
 
     @classmethod
@@ -44,6 +46,12 @@ class TrainStatistics:
                 label_values=archive["label_values"].astype(np.int64),
                 count=int(archive["count"]),
                 schema_fingerprint=str(archive["schema_fingerprint"]),
+                cache_fingerprint=(
+                    str(archive["cache_fingerprint"])
+                    if "cache_fingerprint" in archive.files
+                    and str(archive["cache_fingerprint"])
+                    else None
+                ),
             )
         if schema is not None and result.schema_fingerprint != schema.fingerprint:
             raise ValueError("Statistics schema fingerprint does not match the CSV header")
@@ -56,6 +64,7 @@ def compute_train_statistics(
     *,
     num_classes: int,
     min_std: float = 1e-6,
+    cache_fingerprint: str | None = None,
 ) -> TrainStatistics:
     count = 0
     mean = np.zeros(schema.num_features, dtype=np.float64)
@@ -86,4 +95,5 @@ def compute_train_statistics(
         label_values=np.asarray(stream.label_values, dtype=np.int64),
         count=count,
         schema_fingerprint=schema.fingerprint,
+        cache_fingerprint=cache_fingerprint,
     )

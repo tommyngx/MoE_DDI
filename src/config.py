@@ -19,7 +19,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "num_classes": 178,
         "block_size_mb": 64,
         "batch_size": 256,
-        "stats_path": "runs/moeddi/info/train_stats.npz",
+        "stats_path": "Dataset/train_stats.npz",
         "split_manifest": None,
     },
     "preprocessing": {"max_rows": None, "min_std": 1e-6},
@@ -80,6 +80,12 @@ def resolve_project_path(config: dict[str, Any], value: str | Path) -> Path:
     if path.is_absolute():
         return path
     return Path(config["_project_root"]) / path
+
+
+def shared_stats_path(config: dict[str, Any]) -> Path:
+    """Return the reusable preprocessing cache inside the selected data folder."""
+    data_root = resolve_project_path(config, config["data"]["root"])
+    return data_root / "train_stats.npz"
 
 
 def split_paths(config: dict[str, Any], role: str) -> list[Path]:

@@ -11,7 +11,7 @@ data:
   num_classes: 178
   block_size_mb: 16
   batch_size: 64
-  stats_path: runs/smoke/info/train_stats.npz
+  stats_path: Dataset/train_stats.npz
   split_manifest: null
 
 preprocessing:

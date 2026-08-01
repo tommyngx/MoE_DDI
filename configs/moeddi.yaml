@@ -11,7 +11,7 @@ data:
   num_classes: 178
   block_size_mb: 64
   batch_size: 256
-  stats_path: runs/moeddi_seed2026/info/train_stats.npz
+  stats_path: Dataset/train_stats.npz
   split_manifest: null
 
 preprocessing:
