@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--freeze-tddi-epochs", type=int)
     parser.add_argument("--tddi-backbone-lr-multiplier", type=float)
+    parser.add_argument("--router-top-k", type=int, help="Top-K experts to select in MoE router")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--max-train-rows", type=int)
@@ -75,6 +76,7 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
 
     scalar_overrides = {
         ("data", "batch_size"): args.batch_size,
+        ("model", "router_top_k"): args.router_top_k,
         ("training", "epochs"): args.epochs,
         ("training", "learning_rate"): args.learning_rate,
         ("training", "weight_decay"): args.weight_decay,

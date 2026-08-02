@@ -26,9 +26,8 @@ model:
   expert_dim: 384
   expert_dropout: 0.1
   router_hidden_dim: 256
-  # All experts are computed in this implementation, so dense routing gives
-  # every family a classification gradient without increasing FLOPs.
-  router_top_k: null
+  # Enable Top-K sparse routing (k=2) for fast training & sparse expert selection
+  router_top_k: 2
   include_generalist: false
   use_shared_trunk: false
   shared_trunk_hidden_dim: 512
