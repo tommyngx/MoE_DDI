@@ -12,8 +12,11 @@ import numpy as np
 
 def _series(history: list[dict], key: str, nested: str | None = None) -> list[float]:
     if nested is None:
-        return [float(row[key]) for row in history]
-    return [float(row[key][nested]) for row in history]
+        return [float(row[key]) if row[key] is not None else float("nan") for row in history]
+    return [
+        float(row[key][nested]) if row[key][nested] is not None else float("nan")
+        for row in history
+    ]
 
 
 def _save_figure(figure: plt.Figure, path: Path) -> None:
@@ -42,6 +45,18 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
 
     axes[1, 0].plot(epochs, _series(history, "train_balance_loss"), label="balance")
     axes[1, 0].plot(epochs, _series(history, "train_router_z_loss"), label="router z")
+    if "train_moe_auxiliary_loss" in history[0]:
+        axes[1, 0].plot(
+            epochs,
+            _series(history, "train_moe_auxiliary_loss"),
+            label="MoE prediction",
+        )
+    if "train_global_auxiliary_loss" in history[0]:
+        axes[1, 0].plot(
+            epochs,
+            _series(history, "train_global_auxiliary_loss"),
+            label="global prediction",
+        )
     axes[1, 0].set_title("MoE auxiliary losses")
     axes[1, 0].legend()
 

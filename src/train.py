@@ -40,6 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Optimizer and scheduler start fresh."
         ),
     )
+    parser.add_argument(
+        "--tddi-pretrain",
+        dest="tddi_pretrained_checkpoint",
+        help="Initialize the hybrid MoE global path from one corrected T-DDI checkpoint",
+    )
+    parser.add_argument("--freeze-tddi-epochs", type=int)
+    parser.add_argument("--tddi-backbone-lr-multiplier", type=float)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--device", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--max-train-rows", type=int)
@@ -72,6 +79,12 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
         ("training", "learning_rate"): args.learning_rate,
         ("training", "weight_decay"): args.weight_decay,
         ("training", "pretrained_checkpoint"): args.pretrained_checkpoint,
+        ("training", "tddi_pretrained_checkpoint"): args.tddi_pretrained_checkpoint,
+        ("training", "freeze_tddi_epochs"): args.freeze_tddi_epochs,
+        (
+            "training",
+            "tddi_backbone_lr_multiplier",
+        ): args.tddi_backbone_lr_multiplier,
         ("training", "device"): args.device,
         ("training", "max_rows"): args.max_train_rows,
         ("training", "max_steps_per_epoch"): args.max_steps_per_epoch,
@@ -89,15 +102,14 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
     config["training"]["run_dir"] = str(run_dir)
     if args.stats_path:
         config["data"]["stats_path"] = str(Path(args.stats_path).expanduser().resolve())
-    else:
+    elif args.data_dir:
         config["data"]["stats_path"] = str(shared_stats_path(config))
-        data_root = Path(config["data"]["root"])
+    if not args.stats_path:
         config["data"]["stats_fallback_paths"] = list(
             dict.fromkeys(
                 [
                     str(run_dir / "info" / "train_stats.npz"),
                     str(configured_stats_path),
-                    str(data_root / ".moeddi_cache" / "train_stats.npz"),
                 ]
             )
         )

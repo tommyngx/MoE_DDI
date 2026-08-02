@@ -11,12 +11,13 @@ data:
   num_classes: 178
   block_size_mb: 16
   batch_size: 64
-  stats_path: Dataset/train_stats.npz
+  stats_path: runs/_cache/train_stats_rows_2048.npz
   split_manifest: null
 
 preprocessing:
   max_rows: 2048
   min_std: 1.0e-6
+  normalization: none
 
 model:
   name: moeddi
@@ -24,17 +25,25 @@ model:
   expert_dim: 32
   expert_dropout: 0.05
   router_hidden_dim: 32
-  router_top_k: 2
-  include_generalist: true
+  router_top_k: null
+  include_generalist: false
+  use_shared_trunk: false
+  shared_trunk_hidden_dim: 64
+  use_tddi_backbone: true
+  tddi_hidden_multipliers: [1]
+  zero_init_moe_residual: true
+  router_log_statistics: true
   classifier_hidden_dim: 64
   classifier_dropout: 0.05
 
 loss:
   name: focal
-  gamma: 2.0
+  gamma: 1.0
   class_weighting: none
   effective_beta: 0.9999
   label_smoothing: 0.0
+  moe_auxiliary_weight: 0.3
+  global_auxiliary_weight: 0.3
   moe_balance_weight: 0.01
   router_z_weight: 0.001
 
@@ -44,6 +53,10 @@ training:
   max_steps_per_epoch: 4
   learning_rate: 0.001
   weight_decay: 0.0001
+  pretrained_checkpoint: null
+  tddi_pretrained_checkpoint: null
+  freeze_tddi_epochs: 0
+  tddi_backbone_lr_multiplier: 0.2
   gradient_clip_norm: 1.0
   gradient_accumulation_steps: 1
   mixed_precision: false

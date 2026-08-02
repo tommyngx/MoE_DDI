@@ -20,7 +20,15 @@ def test_train_parser_accepts_pretrain_alias():
     assert args.pretrained_checkpoint == "runs/old/best.pt"
 
 
-def test_train_uses_shared_statistics_cache_in_data_folder(tmp_path):
+def test_train_parser_accepts_tddi_backbone_pretrain():
+    args = build_parser().parse_args(
+        ["--tddi-pretrain", "runs/tddi/folds/fold_1/best.pt", "--freeze-tddi-epochs", "5"]
+    )
+    assert args.tddi_pretrained_checkpoint == "runs/tddi/folds/fold_1/best.pt"
+    assert args.freeze_tddi_epochs == 5
+
+
+def test_train_uses_shared_statistics_cache_outside_raw_data_folder(tmp_path):
     data_dir = tmp_path / "dataset"
     args = build_parser().parse_args(["--data", str(data_dir)])
     config = {
@@ -36,7 +44,7 @@ def test_train_uses_shared_statistics_cache_in_data_folder(tmp_path):
     resolved = apply_overrides(config, args)
 
     assert resolved["data"]["stats_path"] == str(
-        data_dir / "train_stats.npz"
+        tmp_path / "runs" / "_cache" / "train_stats_full.npz"
     )
 
 

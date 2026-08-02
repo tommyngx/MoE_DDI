@@ -1,5 +1,6 @@
+# Lightweight 6.8M-parameter shared-trunk profile retained as an ablation.
 seed: 2026
-run_name: moeddi_seed2026
+run_name: moeddi_light_seed2026
 
 data:
   root: Dataset
@@ -17,28 +18,21 @@ data:
 preprocessing:
   max_rows: null
   min_std: 1.0e-6
-  # Preserve the exact raw-input LayerNorm path used by the embedded T-DDI backbone.
-  normalization: none
+  normalization: standardize
 
 model:
   name: moeddi
-  expert_hidden_dim: 768
-  expert_dim: 384
-  expert_dropout: 0.1
-  router_hidden_dim: 256
-  # All experts are computed in this implementation, so dense routing gives
-  # every family a classification gradient without increasing FLOPs.
+  expert_hidden_dim: 512
+  expert_dim: 256
+  expert_dropout: 0.15
+  router_hidden_dim: 128
   router_top_k: null
   include_generalist: false
-  use_shared_trunk: false
+  use_shared_trunk: true
   shared_trunk_hidden_dim: 512
-  # Capacity-matched T-DDI backbone; family MoE predicts residual logits on top.
-  use_tddi_backbone: true
-  tddi_hidden_multipliers: [2, 2]
-  zero_init_moe_residual: true
-  router_log_statistics: true
-  classifier_hidden_dim: 768
-  classifier_dropout: 0.1
+  use_tddi_backbone: false
+  classifier_hidden_dim: 512
+  classifier_dropout: 0.2
 
 loss:
   name: focal
@@ -46,8 +40,6 @@ loss:
   class_weighting: none
   effective_beta: 0.9999
   label_smoothing: 0.0
-  moe_auxiliary_weight: 0.3
-  global_auxiliary_weight: 0.3
   moe_balance_weight: 0.01
   router_z_weight: 0.001
 
@@ -59,8 +51,7 @@ training:
   weight_decay: 1.5446e-4
   pretrained_checkpoint: null
   tddi_pretrained_checkpoint: null
-  freeze_tddi_epochs: 5
-  tddi_backbone_lr_multiplier: 0.2
+  freeze_tddi_epochs: 0
   gradient_clip_norm: 1.0
   gradient_accumulation_steps: 1
   mixed_precision: true
@@ -68,7 +59,7 @@ training:
   early_stopping_patience: 50
   selection_metric: macro_f1
   device: auto
-  run_dir: runs/moeddi_seed2026
+  run_dir: runs/moeddi_light_seed2026
 
 evaluation:
   max_rows: null

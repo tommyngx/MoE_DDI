@@ -22,6 +22,13 @@ class TrainStatistics:
     def normalize(self, features: np.ndarray) -> np.ndarray:
         return (features - self.mean) / self.std
 
+    def transform(self, features: np.ndarray, mode: str = "standardize") -> np.ndarray:
+        if mode == "standardize":
+            return self.normalize(features)
+        if mode == "none":
+            return features
+        raise ValueError(f"Unknown normalization mode: {mode}")
+
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

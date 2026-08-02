@@ -194,6 +194,8 @@ def _forward(model: nn.Module, inputs: torch.Tensor) -> ModelOutput:
         balance_loss=zero,
         router_z_loss=zero,
         router_probabilities=empty_router,
+        auxiliary_logits=None,
+        global_logits=None,
     )
 
 
@@ -206,7 +208,35 @@ def evaluate_model(
     *,
     criterion: nn.Module | None = None,
 ) -> tuple[dict, list[dict], np.ndarray]:
-    model.eval()
+    return evaluate_models(
+        [model],
+        stream,
+        statistics,
+        device,
+        config,
+        criterion=criterion,
+    )
+
+
+def _entropy(probabilities: torch.Tensor) -> torch.Tensor:
+    return -(probabilities.clamp_min(1e-8) * probabilities.clamp_min(1e-8).log()).sum(
+        dim=-1
+    )
+
+
+def evaluate_models(
+    models: list[nn.Module],
+    stream: CsvBatchStream,
+    statistics: TrainStatistics,
+    device: torch.device,
+    config: dict,
+    *,
+    criterion: nn.Module | None = None,
+) -> tuple[dict, list[dict], np.ndarray]:
+    if not models:
+        raise ValueError("At least one model is required for evaluation")
+    for model in models:
+        model.eval()
     metrics = ClassificationMetrics(
         config["data"]["num_classes"],
         top_k=config["evaluation"].get("top_k", [1, 3, 5]),
@@ -215,27 +245,98 @@ def evaluate_model(
     total_loss = 0.0
     total_samples = 0
     router_sum: np.ndarray | None = None
+    uncertainty_sums = {
+        "entropy": 0.0,
+        "variance": 0.0,
+        "mutual_information": 0.0,
+        "confidence": 0.0,
+    }
+    thresholds = config["evaluation"].get("confidence_thresholds")
+    stratum_metrics = None
+    if thresholds:
+        stratum_metrics = {
+            name: ClassificationMetrics(
+                config["data"]["num_classes"],
+                top_k=config["evaluation"].get("top_k", [1, 3, 5]),
+                calibration_bins=config["evaluation"].get("calibration_bins", 15),
+            )
+            for name in ("high", "medium", "low")
+        }
     with torch.inference_mode():
         for features, labels in stream:
-            normalized = statistics.normalize(features)
-            inputs = torch.from_numpy(normalized).to(device)
+            transformed = statistics.transform(
+                features,
+                config["preprocessing"].get("normalization", "standardize"),
+            )
+            inputs = torch.from_numpy(transformed).to(device)
             targets = torch.from_numpy(labels).to(device)
-            output = _forward(model, inputs)
-            metrics.update(output.logits, targets)
+            outputs = [_forward(member, inputs) for member in models]
+            member_probabilities = torch.stack(
+                [torch.softmax(output.logits, dim=-1) for output in outputs],
+                dim=0,
+            )
+            probabilities = member_probabilities.mean(dim=0)
+            metrics.update_probabilities(probabilities, targets)
             if criterion is not None:
-                loss = criterion(output.logits, targets)
+                # log(p) is a valid logits representation because softmax(log(p)) == p.
+                loss = criterion(probabilities.clamp_min(1e-8).log(), targets)
                 total_loss += float(loss.item()) * len(labels)
             total_samples += len(labels)
-            if output.router_probabilities.shape[1]:
-                values = output.router_probabilities.sum(dim=0).cpu().numpy()
+            router_outputs = [
+                output.router_probabilities
+                for output in outputs
+                if output.router_probabilities.shape[1]
+            ]
+            if router_outputs:
+                values = torch.stack(router_outputs).mean(dim=0).sum(dim=0).cpu().numpy()
                 router_sum = values if router_sum is None else router_sum + values
 
+            predictive_entropy = _entropy(probabilities)
+            member_entropy = _entropy(member_probabilities)
+            variance = member_probabilities.var(dim=0, unbiased=False).mean(dim=-1)
+            mutual_information = predictive_entropy - member_entropy.mean(dim=0)
+            confidence = 1.0 - predictive_entropy / np.log(probabilities.shape[1])
+            uncertainty_sums["entropy"] += float(predictive_entropy.sum().item())
+            uncertainty_sums["variance"] += float(variance.sum().item())
+            uncertainty_sums["mutual_information"] += float(
+                mutual_information.sum().item()
+            )
+            uncertainty_sums["confidence"] += float(confidence.sum().item())
+
+            if stratum_metrics is not None:
+                high = confidence >= float(thresholds["high"])
+                low = confidence < float(thresholds["low"])
+                masks = {"high": high, "medium": ~(high | low), "low": low}
+                for name, mask in masks.items():
+                    if mask.any():
+                        stratum_metrics[name].update_probabilities(
+                            probabilities[mask], targets[mask]
+                        )
+
     aggregate, per_class = metrics.compute()
+    aggregate["ensemble_size"] = len(models)
     if criterion is not None and total_samples:
         aggregate["loss"] = total_loss / total_samples
+    if total_samples:
+        aggregate.update(
+            {
+                f"mean_{name}": value / total_samples
+                for name, value in uncertainty_sums.items()
+            }
+        )
     if router_sum is not None and total_samples:
         aggregate["mean_router_probability"] = (router_sum / total_samples).tolist()
-        aggregate["router_family_names"] = list(getattr(model, "family_names", ()))
+        aggregate["router_family_names"] = list(getattr(models[0], "family_names", ()))
+    if stratum_metrics is not None:
+        aggregate["confidence_thresholds"] = {
+            "low": float(thresholds["low"]),
+            "high": float(thresholds["high"]),
+        }
+        aggregate["confidence_strata"] = {}
+        for name, tracker in stratum_metrics.items():
+            values, _ = tracker.compute()
+            values["coverage"] = values["num_samples"] / total_samples if total_samples else 0.0
+            aggregate["confidence_strata"][name] = values
     return aggregate, per_class, metrics.confusion.copy()
 
 
@@ -319,24 +420,88 @@ def _load_pretrained_weights(
     return checkpoint_path
 
 
-def train(config: dict) -> Path:
-    set_seed(config["seed"])
+def _load_tddi_backbone_weights(
+    model: nn.Module,
+    config: dict,
+    schema: DatasetSchema,
+    statistics: TrainStatistics,
+) -> Path | None:
+    value = config["training"].get("tddi_pretrained_checkpoint")
+    if not value:
+        return None
+    if config["training"].get("pretrained_checkpoint"):
+        raise ValueError(
+            "Use either pretrained_checkpoint or tddi_pretrained_checkpoint, not both"
+        )
+    if not hasattr(model, "load_tddi_state_dict"):
+        raise ValueError("Configured model cannot import a T-DDI numerical checkpoint")
+
+    checkpoint_path = resolve_project_path(config, value)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"T-DDI checkpoint not found: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if "model_state" not in checkpoint:
+        if checkpoint.get("member_checkpoints"):
+            raise ValueError(
+                "Use one fold/member checkpoint for T-DDI initialization, not an ensemble manifest"
+            )
+        raise ValueError(f"Unsupported T-DDI checkpoint format: {checkpoint_path}")
+    if checkpoint.get("schema_fingerprint") not in {None, schema.fingerprint}:
+        raise ValueError("T-DDI checkpoint schema does not match current dataset")
+    checkpoint_labels = checkpoint.get("label_values")
+    if checkpoint_labels is not None and not np.array_equal(
+        checkpoint_labels, statistics.label_values
+    ):
+        raise ValueError("T-DDI checkpoint label vocabulary does not match current dataset")
+    model.load_tddi_state_dict(checkpoint["model_state"])
+    print(f"[train] Initialized global backbone from T-DDI: {checkpoint_path}", flush=True)
+    return checkpoint_path
+
+
+def train(config: dict, *, reset_seed: bool = True) -> Path:
+    if reset_seed:
+        set_seed(config["seed"])
     schema = load_and_validate_schema(config)
     stats_path = prepare_statistics(config, schema)
     statistics = TrainStatistics.load(stats_path, schema)
     device = select_device(config["training"].get("device", "auto"))
     model = build_model(config, schema).to(device)
     pretrained_path = _load_pretrained_weights(model, config, schema, statistics, device)
+    tddi_pretrained_path = _load_tddi_backbone_weights(
+        model, config, schema, statistics
+    )
     criterion = build_loss(config, statistics.class_counts, device)
     training_config = config["training"]
+    optimizer_parameters = model.parameters()
+    backbone_lr_multiplier = float(
+        training_config.get("tddi_backbone_lr_multiplier", 1.0)
+    )
+    if tddi_pretrained_path is not None and backbone_lr_multiplier != 1.0:
+        tddi_parameters = list(model.tddi_parameters())
+        tddi_parameter_ids = {id(parameter) for parameter in tddi_parameters}
+        residual_parameters = [
+            parameter
+            for parameter in model.parameters()
+            if id(parameter) not in tddi_parameter_ids
+        ]
+        optimizer_parameters = [
+            {"params": residual_parameters},
+            {
+                "params": tddi_parameters,
+                "lr": training_config["learning_rate"] * backbone_lr_multiplier,
+            },
+        ]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        optimizer_parameters,
         lr=training_config["learning_rate"],
         weight_decay=training_config["weight_decay"],
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        T_max=max(1, training_config["epochs"]),
+        T_max=(
+            training_config.get("cosine_t_max")
+            or max(1, training_config["epochs"])
+        ),
     )
     use_scaler = bool(training_config.get("mixed_precision", True) and device.type == "cuda")
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
@@ -356,6 +521,11 @@ def train(config: dict) -> Path:
         },
     )
     parameter_summary = count_parameters(model)
+    freeze_tddi_epochs = 0
+    if tddi_pretrained_path is not None:
+        freeze_tddi_epochs = int(training_config.get("freeze_tddi_epochs", 0))
+        if freeze_tddi_epochs > 0:
+            model.set_tddi_trainable(False)
     plot_class_distribution(
         statistics.class_counts,
         statistics.label_values,
@@ -370,11 +540,17 @@ def train(config: dict) -> Path:
         info_dir / "model_summary.json",
         {
             "model": config["model"]["name"],
-            "parameters": count_parameters(model),
+            "parameters": parameter_summary,
+            "parameters_during_initial_freeze": count_parameters(model),
             "device": str(device),
             "pretrained_checkpoint": (
                 str(pretrained_path) if pretrained_path is not None else None
             ),
+            "tddi_pretrained_checkpoint": (
+                str(tddi_pretrained_path) if tddi_pretrained_path is not None else None
+            ),
+            "freeze_tddi_epochs": freeze_tddi_epochs,
+            "tddi_backbone_lr_multiplier": backbone_lr_multiplier,
         },
     )
 
@@ -386,7 +562,71 @@ def train(config: dict) -> Path:
     max_steps = training_config.get("max_steps_per_epoch")
     started = time.time()
 
+    # A zero-initialized MoE residual makes the imported T-DDI prediction an
+    # exact member of the hybrid hypothesis class.  Evaluate and checkpoint
+    # that point before optimization so validation-based selection can always
+    # fall back to the imported baseline if residual training is harmful.
+    if tddi_pretrained_path is not None:
+        initial_stream = make_stream(
+            config,
+            schema,
+            "validation",
+            max_rows=config["evaluation"].get("max_rows"),
+            shuffle=False,
+            seed=config["seed"],
+            label_values=statistics.label_values,
+        )
+        initial_validation, _, _ = evaluate_model(
+            model,
+            initial_stream,
+            statistics,
+            device,
+            config,
+            criterion=criterion,
+        )
+        initial_record = {
+            "epoch": 0,
+            "stage": "tddi_initialization",
+            "learning_rate": optimizer.param_groups[0]["lr"],
+            "train_samples": 0,
+            "train_classification_loss": None,
+            "train_moe_auxiliary_loss": None,
+            "train_global_auxiliary_loss": None,
+            "train_balance_loss": None,
+            "train_router_z_loss": None,
+            "validation": initial_validation,
+            "elapsed_seconds": time.time() - started,
+        }
+        history.append(initial_record)
+        write_json(info_dir / "history.json", history)
+        initial_checkpoint = {
+            "epoch": 0,
+            "stage": "tddi_initialization",
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "schema_fingerprint": schema.fingerprint,
+            "label_values": statistics.label_values,
+            "config": config,
+            "validation": initial_validation,
+            "pretrained_checkpoint": None,
+            "tddi_pretrained_checkpoint": str(tddi_pretrained_path),
+        }
+        best_value = float(
+            initial_validation[training_config["selection_metric"]]
+        )
+        _save_checkpoint(best_path, initial_checkpoint)
+        print(
+            "[epoch 0/T-DDI] "
+            f"val_loss={initial_validation.get('loss', float('nan')):.4f} "
+            f"val_accuracy={initial_validation['accuracy']:.4f} "
+            f"val_macro_f1={initial_validation['macro_f1']:.4f}",
+            flush=True,
+        )
+
     for epoch in range(training_config["epochs"]):
+        if freeze_tddi_epochs and epoch == freeze_tddi_epochs:
+            model.set_tddi_trainable(True)
+            print("[train] Unfroze the T-DDI global backbone.", flush=True)
         model.train()
         stream = make_stream(
             config,
@@ -398,12 +638,21 @@ def train(config: dict) -> Path:
             label_values=statistics.label_values,
         )
         optimizer.zero_grad(set_to_none=True)
-        running = {"classification": 0.0, "balance": 0.0, "router_z": 0.0}
+        running = {
+            "classification": 0.0,
+            "moe_auxiliary": 0.0,
+            "global_auxiliary": 0.0,
+            "balance": 0.0,
+            "router_z": 0.0,
+        }
         samples = 0
         steps = 0
         for steps, (features, labels) in enumerate(stream, start=1):
-            normalized = statistics.normalize(features)
-            inputs = torch.from_numpy(normalized).to(device)
+            transformed = statistics.transform(
+                features,
+                config["preprocessing"].get("normalization", "standardize"),
+            )
+            inputs = torch.from_numpy(transformed).to(device)
             targets = torch.from_numpy(labels).to(device)
             with torch.autocast(
                 device_type=device.type,
@@ -412,13 +661,33 @@ def train(config: dict) -> Path:
             ):
                 output = _forward(model, inputs)
                 classification_loss = criterion(output.logits, targets)
+                moe_auxiliary_loss = output.logits.new_zeros(())
+                if output.auxiliary_logits is not None:
+                    moe_auxiliary_loss = criterion(output.auxiliary_logits, targets)
+                global_auxiliary_loss = output.logits.new_zeros(())
+                if output.global_logits is not None:
+                    global_auxiliary_loss = criterion(output.global_logits, targets)
+                moe_auxiliary_term = (
+                    config["loss"].get("moe_auxiliary_weight", 0.0)
+                    * moe_auxiliary_loss
+                )
+                global_auxiliary_term = (
+                    config["loss"].get("global_auxiliary_weight", 0.0)
+                    * global_auxiliary_loss
+                )
                 balance_term = (
                     config["loss"].get("moe_balance_weight", 0.0) * output.balance_loss
                 )
                 router_z_term = (
                     config["loss"].get("router_z_weight", 0.0) * output.router_z_loss
                 )
-                loss = (classification_loss + balance_term + router_z_term) / accumulation
+                loss = (
+                    classification_loss
+                    + moe_auxiliary_term
+                    + global_auxiliary_term
+                    + balance_term
+                    + router_z_term
+                ) / accumulation
             scaler.scale(loss).backward()
             if steps % accumulation == 0:
                 if training_config.get("gradient_clip_norm") is not None:
@@ -433,6 +702,8 @@ def train(config: dict) -> Path:
             batch_size = len(labels)
             samples += batch_size
             running["classification"] += float(classification_loss.item()) * batch_size
+            running["moe_auxiliary"] += float(moe_auxiliary_loss.item()) * batch_size
+            running["global_auxiliary"] += float(global_auxiliary_loss.item()) * batch_size
             running["balance"] += float(output.balance_loss.item()) * batch_size
             running["router_z"] += float(output.router_z_loss.item()) * batch_size
             if max_steps is not None and steps >= max_steps:
@@ -472,6 +743,8 @@ def train(config: dict) -> Path:
             "learning_rate": optimizer.param_groups[0]["lr"],
             "train_samples": samples,
             "train_classification_loss": running["classification"] / samples,
+            "train_moe_auxiliary_loss": running["moe_auxiliary"] / samples,
+            "train_global_auxiliary_loss": running["global_auxiliary"] / samples,
             "train_balance_loss": running["balance"] / samples,
             "train_router_z_loss": running["router_z"] / samples,
             "validation": validation,
@@ -500,6 +773,9 @@ def train(config: dict) -> Path:
             "pretrained_checkpoint": (
                 str(pretrained_path) if pretrained_path is not None else None
             ),
+            "tddi_pretrained_checkpoint": (
+                str(tddi_pretrained_path) if tddi_pretrained_path is not None else None
+            ),
         }
         _save_checkpoint(run_dir / "last.pt", checkpoint)
         selection = float(validation[training_config["selection_metric"]])
@@ -524,7 +800,10 @@ def train(config: dict) -> Path:
     return best_path
 
 
-def evaluate_checkpoint(config: dict, checkpoint_path: str | Path) -> dict:
+def evaluate_checkpoint(
+    config: dict,
+    checkpoint_path: str | Path | list[str | Path] | tuple[str | Path, ...],
+) -> dict:
     set_seed(config["seed"])
     schema = load_and_validate_schema(config)
     statistics = TrainStatistics.load(
@@ -532,16 +811,53 @@ def evaluate_checkpoint(config: dict, checkpoint_path: str | Path) -> dict:
         schema,
     )
     device = select_device(config["training"].get("device", "auto"))
-    model = build_model(config, schema).to(device)
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.is_absolute():
-        checkpoint_path = resolve_project_path(config, checkpoint_path)
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    if checkpoint["schema_fingerprint"] != schema.fingerprint:
-        raise ValueError("Checkpoint schema does not match current dataset")
-    if not np.array_equal(checkpoint["label_values"], statistics.label_values):
-        raise ValueError("Checkpoint label vocabulary does not match training statistics")
-    model.load_state_dict(checkpoint["model_state"])
+    requested_values = (
+        list(checkpoint_path)
+        if isinstance(checkpoint_path, (list, tuple))
+        else [checkpoint_path]
+    )
+    checkpoint_paths = []
+    models = []
+    pending = [Path(value) for value in requested_values]
+    while pending:
+        resolved_path = pending.pop(0)
+        if not resolved_path.is_absolute():
+            resolved_path = resolve_project_path(config, resolved_path)
+        payload = torch.load(resolved_path, map_location="cpu", weights_only=False)
+        member_values = payload.get("member_checkpoints")
+        if member_values:
+            for member_value in member_values:
+                member_path = Path(member_value)
+                if not member_path.is_absolute():
+                    member_path = resolved_path.parent / member_path
+                pending.append(member_path)
+            continue
+        if payload["schema_fingerprint"] != schema.fingerprint:
+            raise ValueError(f"Checkpoint schema does not match current dataset: {resolved_path}")
+        if not np.array_equal(payload["label_values"], statistics.label_values):
+            raise ValueError(
+                f"Checkpoint label vocabulary does not match training statistics: {resolved_path}"
+            )
+        checkpoint_normalization = payload.get("config", {}).get(
+            "preprocessing", {}
+        ).get("normalization", "standardize")
+        requested_normalization = config["preprocessing"].get(
+            "normalization", "standardize"
+        )
+        if checkpoint_normalization != requested_normalization:
+            raise ValueError(
+                "Checkpoint normalization mode does not match evaluation config: "
+                f"{resolved_path} uses {checkpoint_normalization!r}, requested "
+                f"{requested_normalization!r}"
+            )
+        model = build_model(config, schema).to(device)
+        model.load_state_dict(payload["model_state"])
+        model.eval()
+        models.append(model)
+        checkpoint_paths.append(str(resolved_path))
+        del payload
+    if not models:
+        raise ValueError("Ensemble checkpoint contains no member checkpoints")
     criterion = build_loss(config, statistics.class_counts, device)
     stream = make_stream(
         config,
@@ -552,8 +868,8 @@ def evaluate_checkpoint(config: dict, checkpoint_path: str | Path) -> dict:
         seed=config["seed"],
         label_values=statistics.label_values,
     )
-    aggregate, per_class, confusion = evaluate_model(
-        model,
+    aggregate, per_class, confusion = evaluate_models(
+        models,
         stream,
         statistics,
         device,
@@ -562,6 +878,7 @@ def evaluate_checkpoint(config: dict, checkpoint_path: str | Path) -> dict:
     )
     for row in per_class:
         row["original_class_id"] = int(statistics.label_values[row["class"]])
+    aggregate["checkpoints"] = checkpoint_paths
     info_dir = resolve_run_dir(config) / "info"
     write_json(info_dir / "test_metrics.json", aggregate)
     _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
@@ -584,7 +901,7 @@ def evaluate_checkpoint(config: dict, checkpoint_path: str | Path) -> dict:
         summary_config,
         schema,
         statistics,
-        count_parameters(model),
+        count_parameters(models[0]),
         str(device),
         history,
         test_metrics=aggregate,

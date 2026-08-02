@@ -32,3 +32,6 @@ def test_streaming_statistics_and_roundtrip(tmp_path):
     loaded = TrainStatistics.load(path, _schema())
     np.testing.assert_allclose(loaded.mean, stats.mean)
     assert loaded.count == 4
+    values = np.asarray([[4, 7]], dtype=np.float32)
+    np.testing.assert_allclose(loaded.transform(values, "none"), values)
+    np.testing.assert_allclose(loaded.transform(values, "standardize"), [[0, 2 / np.sqrt(5)]])

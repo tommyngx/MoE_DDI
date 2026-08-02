@@ -53,7 +53,12 @@ def main() -> None:
 
     evaluate_parser = subparsers.add_parser("evaluate")
     evaluate_parser.add_argument("--config", required=True)
-    evaluate_parser.add_argument("--checkpoint", required=True)
+    evaluate_parser.add_argument(
+        "--checkpoint",
+        required=True,
+        nargs="+",
+        help="One checkpoint, or multiple checkpoints for deep-ensemble evaluation",
+    )
 
     split_parser = subparsers.add_parser("make-split")
     split_parser.add_argument("--config", required=True)
@@ -103,4 +108,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

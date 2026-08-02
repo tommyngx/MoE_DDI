@@ -11,7 +11,12 @@ from engine import evaluate_checkpoint
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a MoEDDI checkpoint")
     parser.add_argument("--config", default="configs/moeddi.yaml")
-    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument(
+        "--checkpoint",
+        required=True,
+        nargs="+",
+        help="One checkpoint, or multiple checkpoints whose probabilities are averaged",
+    )
     parser.add_argument("--data", "--input-dir", dest="data_dir")
     parser.add_argument("--run-dir")
     parser.add_argument("--stats-path")

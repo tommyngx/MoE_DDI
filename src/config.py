@@ -19,10 +19,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "num_classes": 178,
         "block_size_mb": 64,
         "batch_size": 256,
-        "stats_path": "Dataset/train_stats.npz",
+        "stats_path": "runs/_cache/train_stats_full.npz",
         "split_manifest": None,
     },
-    "preprocessing": {"max_rows": None, "min_std": 1e-6},
+    "preprocessing": {
+        "max_rows": None,
+        "min_std": 1e-6,
+        "normalization": "standardize",
+    },
     "model": {"name": "moeddi"},
     "loss": {
         "name": "focal",
@@ -30,6 +34,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "class_weighting": "none",
         "effective_beta": 0.9999,
         "label_smoothing": 0.0,
+        "moe_auxiliary_weight": 0.0,
+        "global_auxiliary_weight": 0.0,
         "moe_balance_weight": 0.01,
         "router_z_weight": 0.001,
     },
@@ -40,15 +46,24 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "learning_rate": 3e-4,
         "weight_decay": 1e-4,
         "pretrained_checkpoint": None,
+        "tddi_pretrained_checkpoint": None,
+        "freeze_tddi_epochs": 0,
+        "tddi_backbone_lr_multiplier": 1.0,
         "gradient_clip_norm": 1.0,
         "gradient_accumulation_steps": 1,
         "mixed_precision": True,
+        "cosine_t_max": None,
         "early_stopping_patience": 8,
         "selection_metric": "macro_f1",
         "device": "auto",
         "run_dir": "runs/moeddi",
     },
-    "evaluation": {"max_rows": None, "top_k": [1, 3, 5], "calibration_bins": 15},
+    "evaluation": {
+        "max_rows": None,
+        "top_k": [1, 3, 5],
+        "calibration_bins": 15,
+        "confidence_thresholds": None,
+    },
 }
 
 
@@ -83,9 +98,10 @@ def resolve_project_path(config: dict[str, Any], value: str | Path) -> Path:
 
 
 def shared_stats_path(config: dict[str, Any]) -> Path:
-    """Return the reusable preprocessing cache inside the selected data folder."""
-    data_root = resolve_project_path(config, config["data"]["root"])
-    return data_root / "train_stats.npz"
+    """Return a reusable cache path without writing into the raw Dataset folder."""
+    max_rows = config.get("preprocessing", {}).get("max_rows")
+    scope = "full" if max_rows is None else f"rows_{max_rows}"
+    return Path(config["_project_root"]) / "runs" / "_cache" / f"train_stats_{scope}.npz"
 
 
 def split_paths(config: dict[str, Any], role: str) -> list[Path]:
@@ -114,6 +130,18 @@ def validate_config(config: dict[str, Any]) -> None:
         "effective_number",
     }:
         raise ValueError("Unsupported loss.class_weighting")
+    if config["preprocessing"].get("normalization", "standardize") not in {
+        "none",
+        "standardize",
+    }:
+        raise ValueError("preprocessing.normalization must be 'none' or 'standardize'")
+    cosine_t_max = config["training"].get("cosine_t_max")
+    if cosine_t_max is not None and cosine_t_max < 1:
+        raise ValueError("training.cosine_t_max must be positive or null")
+    if config["training"].get("freeze_tddi_epochs", 0) < 0:
+        raise ValueError("training.freeze_tddi_epochs must not be negative")
+    if config["training"].get("tddi_backbone_lr_multiplier", 1.0) <= 0:
+        raise ValueError("training.tddi_backbone_lr_multiplier must be positive")
     ratios = config.get("split", {}).get("ratios")
     if ratios is not None and abs(sum(ratios) - 1.0) > 1e-8:
         raise ValueError("split.ratios must sum to 1")

@@ -4,6 +4,7 @@
 /datasets/
 /data/raw/
 /data/external/
+/reference
 
 # Local-only documentation requested by the project owner
 /README.md

@@ -28,6 +28,7 @@ scaffold = ["rdkit>=2024.9"]
 
 [project.scripts]
 moeddi = "cli:main"
+moeddi-tddi-cv = "tddi_cv:main"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]
@@ -41,6 +42,7 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["Reference"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

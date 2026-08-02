@@ -23,6 +23,20 @@ class ClassificationMetrics:
 
     def update(self, logits: torch.Tensor, targets: torch.Tensor) -> None:
         probabilities = torch.softmax(logits.detach(), dim=-1)
+        self.update_probabilities(probabilities, targets)
+
+    def update_probabilities(
+        self,
+        probabilities: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> None:
+        if probabilities.ndim != 2 or probabilities.shape[1] != self.num_classes:
+            raise ValueError(
+                f"Expected probabilities with shape (N, {self.num_classes})"
+            )
+        if probabilities.shape[0] != targets.shape[0]:
+            raise ValueError("Probabilities and targets must have the same batch size")
+        probabilities = probabilities.detach()
         predictions = probabilities.argmax(dim=-1)
         target_values = targets.detach().cpu().numpy().astype(np.int64)
         predicted_values = predictions.cpu().numpy().astype(np.int64)
@@ -111,4 +125,3 @@ class ClassificationMetrics:
             for class_index in range(self.num_classes)
         ]
         return aggregate, per_class
-

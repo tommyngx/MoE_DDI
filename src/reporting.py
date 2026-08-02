@@ -90,10 +90,11 @@ def write_run_summary(
         selection_metric = config["training"]["selection_metric"]
         best = max(history, key=lambda row: float(row["validation"][selection_metric]))
         last = history[-1]
+        completed_epochs = sum(int(row["epoch"] > 0) for row in history)
         _section(lines, "Training and validation result")
         lines.extend(
             [
-                f"Completed epochs: {len(history)}",
+                f"Completed epochs: {completed_epochs}",
                 f"Best epoch: {best['epoch']}",
                 f"Best validation {selection_metric}: "
                 f"{best['validation'][selection_metric]:.8f}",
@@ -110,6 +111,7 @@ def write_run_summary(
         _section(lines, "Held-out test result")
         preferred_order = [
             "num_samples",
+            "ensemble_size",
             "loss",
             "accuracy",
             "micro_f1",
@@ -119,6 +121,10 @@ def write_run_summary(
             "top_3_accuracy",
             "top_5_accuracy",
             "ece",
+            "mean_entropy",
+            "mean_variance",
+            "mean_mutual_information",
+            "mean_confidence",
         ]
         for key in preferred_order:
             if key in test_metrics:

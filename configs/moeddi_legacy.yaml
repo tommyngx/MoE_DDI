@@ -1,0 +1,63 @@
+# Pre-audit MoEDDI profile retained for controlled ablation against configs/moeddi.yaml.
+seed: 2026
+run_name: moeddi_legacy_seed2026
+
+data:
+  root: Dataset
+  train_files: [train_extracted.csv]
+  validation_files: [validation_extracted.csv]
+  test_files: [test_extracted.csv]
+  target_column: class
+  expected_num_features: 3780
+  num_classes: 178
+  block_size_mb: 64
+  batch_size: 256
+  stats_path: runs/_cache/train_stats_full.npz
+  split_manifest: null
+
+preprocessing:
+  max_rows: null
+  min_std: 1.0e-6
+  normalization: standardize
+
+model:
+  name: moeddi
+  expert_hidden_dim: 512
+  expert_dim: 256
+  expert_dropout: 0.15
+  router_hidden_dim: 128
+  router_top_k: 2
+  include_generalist: true
+  use_shared_trunk: false
+  shared_trunk_hidden_dim: 512
+  classifier_hidden_dim: 512
+  classifier_dropout: 0.2
+
+loss:
+  name: focal
+  gamma: 2.0
+  class_weighting: effective_number
+  effective_beta: 0.9999
+  label_smoothing: 0.0
+  moe_balance_weight: 0.01
+  router_z_weight: 0.001
+
+training:
+  epochs: 50
+  max_rows: null
+  max_steps_per_epoch: null
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  gradient_accumulation_steps: 1
+  mixed_precision: true
+  cosine_t_max: null
+  early_stopping_patience: 200
+  selection_metric: macro_f1
+  device: auto
+  run_dir: runs/moeddi_legacy_seed2026
+
+evaluation:
+  max_rows: null
+  top_k: [1, 3, 5]
+  calibration_bins: 15
