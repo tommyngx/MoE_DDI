@@ -79,8 +79,20 @@ def _plot_series(
         )
 
 
+def _format_time(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    if seconds < 3600:
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{mins}m {secs}s"
+    hours = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    return f"{hours}h {mins}m"
+
+
 def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: int) -> None:
-    """Update the main training plot with rich aesthetics, metric-specific 1st best values, star markers, and multi-group LR support."""
+    """Update the main training plot with rich aesthetics, metric-specific 1st best values, star markers, multi-group LR, and elapsed timing."""
     if not history:
         return
     epochs = _series(history, "epoch")
@@ -150,7 +162,16 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
             spine.set_color("#cccccc")
             spine.set_linewidth(1.0)
 
-    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch})", fontsize=14, fontweight="bold", y=0.99, color="#111111")
+    # Calculate timing stats
+    elapsed_seconds = float(history[-1].get("elapsed_seconds", 0.0))
+    time_info = ""
+    if elapsed_seconds > 0:
+        total_time_str = _format_time(elapsed_seconds)
+        avg_per_epoch = elapsed_seconds / max(1, epoch)
+        avg_time_str = f"{avg_per_epoch:.2f}s/epoch" if avg_per_epoch < 60 else _format_time(avg_per_epoch) + "/epoch"
+        time_info = f" | Total: {total_time_str} ({avg_time_str})"
+
+    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch}){time_info}", fontsize=13, fontweight="bold", y=0.99, color="#111111")
     figure.tight_layout()
 
     plot_dir = Path(run_dir) / "plots"

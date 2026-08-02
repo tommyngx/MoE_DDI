@@ -39,6 +39,7 @@ def generate_demo_data(num_epochs=50):
             "train_router_z_loss": router_z_loss,
             "train_moe_auxiliary_loss": moe_aux,
             "train_global_auxiliary_loss": global_aux,
+            "elapsed_seconds": ep * 15.0,
             "validation": {
                 "loss": val_loss,
                 "accuracy": accuracy,
