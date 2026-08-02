@@ -588,6 +588,10 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
             "epoch": 0,
             "stage": "tddi_initialization",
             "learning_rate": optimizer.param_groups[0]["lr"],
+            "learning_rate_1st": optimizer.param_groups[0]["lr"],
+            "learning_rate_2nd": (
+                optimizer.param_groups[1]["lr"] if len(optimizer.param_groups) > 1 else None
+            ),
             "train_samples": 0,
             "train_classification_loss": None,
             "train_moe_auxiliary_loss": None,
@@ -741,6 +745,10 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         epoch_record = {
             "epoch": epoch + 1,
             "learning_rate": optimizer.param_groups[0]["lr"],
+            "learning_rate_1st": optimizer.param_groups[0]["lr"],
+            "learning_rate_2nd": (
+                optimizer.param_groups[1]["lr"] if len(optimizer.param_groups) > 1 else None
+            ),
             "train_samples": samples,
             "train_classification_loss": running["classification"] / samples,
             "train_moe_auxiliary_loss": running["moe_auxiliary"] / samples,
