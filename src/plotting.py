@@ -22,7 +22,15 @@ def _series(history: list[dict], key: str, nested: str | None = None) -> list[fl
 def _save_figure(figure: plt.Figure, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    figure.savefig(temporary, format="png", dpi=160, bbox_inches="tight")
+    figure.savefig(
+        temporary,
+        format="png",
+        dpi=160,
+        bbox_inches="tight",
+        facecolor="white",
+        edgecolor="none",
+        transparent=False,
+    )
     os.replace(temporary, path)
 
 
@@ -87,23 +95,23 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
     c_lr1 = "#008080"        # Teal (1st Group)
     c_lr2 = "#e377c2"        # Pink/Magenta (2nd Group)
 
-    figure, axes = plt.subplots(2, 2, figsize=(15, 9.5), dpi=160)
+    figure, axes = plt.subplots(2, 2, figsize=(15, 9.5), dpi=160, facecolor="white")
 
     # Subplot 1: Classification Loss (Best = Min)
     s_train_loss = _series(history, "train_classification_loss")
     s_val_loss = _series(history, "validation", "loss")
     _plot_series(axes[0, 0], epochs, s_train_loss, "Train Loss", c_train, mode="min")
     _plot_series(axes[0, 0], epochs, s_val_loss, "Val Loss", c_val, mode="min", linestyle="--")
-    axes[0, 0].set_title("Classification Loss", fontsize=12, fontweight="bold")
-    axes[0, 0].legend(frameon=True, framealpha=0.9, fontsize=8.5)
+    axes[0, 0].set_title("Classification Loss", fontsize=12, fontweight="bold", color="#111111")
+    axes[0, 0].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
 
     # Subplot 2: Validation Metrics (Best = Max)
     s_val_acc = _series(history, "validation", "accuracy")
     s_val_f1 = _series(history, "validation", "macro_f1")
     _plot_series(axes[0, 1], epochs, s_val_acc, "Accuracy", c_acc, mode="max")
     _plot_series(axes[0, 1], epochs, s_val_f1, "Macro-F1", c_f1, mode="max")
-    axes[0, 1].set_title("Validation Metrics", fontsize=12, fontweight="bold")
-    axes[0, 1].legend(frameon=True, framealpha=0.9, fontsize=8.5)
+    axes[0, 1].set_title("Validation Metrics", fontsize=12, fontweight="bold", color="#111111")
+    axes[0, 1].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
 
     # Subplot 3: MoE Auxiliary Losses (Best = Min)
     s_balance = _series(history, "train_balance_loss")
@@ -116,8 +124,8 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
     if "train_global_auxiliary_loss" in history[0] and history[0]["train_global_auxiliary_loss"] is not None:
         s_global_aux = _series(history, "train_global_auxiliary_loss")
         _plot_series(axes[1, 0], epochs, s_global_aux, "Global Aux", c_aux2, mode="min", linewidth=1.8)
-    axes[1, 0].set_title("MoE & Auxiliary Losses", fontsize=12, fontweight="bold")
-    axes[1, 0].legend(frameon=True, framealpha=0.9, fontsize=8.5)
+    axes[1, 0].set_title("MoE & Auxiliary Losses", fontsize=12, fontweight="bold", color="#111111")
+    axes[1, 0].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
 
     # Subplot 4: Learning Rate (1st vs 2nd Group)
     lr_1st = _series(history, "learning_rate_1st") if "learning_rate_1st" in history[0] else _series(history, "learning_rate")
@@ -127,17 +135,22 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
         lr_2nd = _series(history, "learning_rate_2nd")
         _plot_series(axes[1, 1], epochs, lr_2nd, "2nd: T-DDI Backbone", c_lr2, mode="max", is_lr=True, linestyle="--", mark_star=False)
 
-    axes[1, 1].set_title("Learning Rate Schedule (1st & 2nd Groups)", fontsize=12, fontweight="bold")
+    axes[1, 1].set_title("Learning Rate Schedule (1st & 2nd Groups)", fontsize=12, fontweight="bold", color="#111111")
     axes[1, 1].ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
-    axes[1, 1].legend(frameon=True, framealpha=0.9, fontsize=8.5)
+    axes[1, 1].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
 
-    # Styling all subplots
+    # Styling all subplots cleanly for headless/server compatibility
     for axis in axes.flat:
-        axis.set_xlabel("Epoch", fontsize=10)
-        axis.grid(True, linestyle="--", alpha=0.4)
-        axis.tick_params(labelsize=9)
+        axis.set_facecolor("white")
+        axis.set_xlabel("Epoch", fontsize=10, color="#111111")
+        axis.set_axisbelow(True)
+        axis.grid(True, linestyle="--", linewidth=0.8, color="#d0d0d0", alpha=0.8)
+        axis.tick_params(labelsize=9, labelcolor="#111111")
+        for spine in axis.spines.values():
+            spine.set_color("#cccccc")
+            spine.set_linewidth(1.0)
 
-    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch})", fontsize=14, fontweight="bold", y=0.99)
+    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch})", fontsize=14, fontweight="bold", y=0.99, color="#111111")
     figure.tight_layout()
 
     plot_dir = Path(run_dir) / "plots"
