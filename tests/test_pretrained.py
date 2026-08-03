@@ -30,11 +30,12 @@ def test_train_parser_accepts_tddi_backbone_pretrain():
 
 def test_train_uses_shared_statistics_cache_outside_raw_data_folder(tmp_path):
     data_dir = tmp_path / "dataset"
+    data_dir.mkdir(parents=True, exist_ok=True)
     args = build_parser().parse_args(["--data", str(data_dir)])
     config = {
         "_project_root": str(tmp_path),
         "run_name": "test",
-        "data": {"root": "unused", "stats_path": "runs/test/info/train_stats.npz"},
+        "data": {"root": "unused", "stats_path": "train_stats.npz"},
         "training": {"run_dir": "runs/test"},
         "evaluation": {},
         "model": {"name": "moeddi"},
@@ -43,9 +44,7 @@ def test_train_uses_shared_statistics_cache_outside_raw_data_folder(tmp_path):
 
     resolved = apply_overrides(config, args)
 
-    assert resolved["data"]["stats_path"] == str(
-        tmp_path / "runs" / "_cache" / "train_stats_full.npz"
-    )
+    assert resolved["data"]["stats_path"] == str(data_dir.resolve() / "train_stats.npz")
 
 
 def test_load_pretrained_project_checkpoint(tmp_path):

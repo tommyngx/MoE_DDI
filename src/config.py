@@ -19,7 +19,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "num_classes": 178,
         "block_size_mb": 64,
         "batch_size": 256,
-        "stats_path": "runs/_cache/train_stats_full.npz",
+        "stats_path": "train_stats.npz",
         "split_manifest": None,
     },
     "preprocessing": {
@@ -112,10 +112,9 @@ def resolve_project_path(config: dict[str, Any], value: str | Path) -> Path:
 
 
 def shared_stats_path(config: dict[str, Any]) -> Path:
-    """Return a reusable cache path without writing into the raw Dataset folder."""
-    max_rows = config.get("preprocessing", {}).get("max_rows")
-    scope = "full" if max_rows is None else f"rows_{max_rows}"
-    return Path(config["_project_root"]) / "runs" / "_cache" / f"train_stats_{scope}.npz"
+    """Return the train_stats.npz path directly inside the data directory."""
+    data_root = resolve_project_path(config, config["data"]["root"])
+    return data_root / "train_stats.npz"
 
 
 def split_paths(config: dict[str, Any], role: str) -> list[Path]:

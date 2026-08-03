@@ -116,41 +116,18 @@ def _statistics_cache_fingerprint(config: dict, schema: DatasetSchema) -> str:
 
 
 def prepare_statistics(config: dict, schema: DatasetSchema, *, force: bool = False) -> Path:
-    stats_path = resolve_project_path(config, config["data"]["stats_path"])
-    cache_fingerprint = _statistics_cache_fingerprint(config, schema)
-    if stats_path.exists() and not force:
+    data_root = resolve_project_path(config, config["data"]["root"])
+    dataset_stats_path = data_root / "train_stats.npz"
+
+    # Direct check: if train_stats.npz exists in data folder and not forced, run directly!
+    if dataset_stats_path.is_file() and not force:
         try:
-            cached_statistics = TrainStatistics.load(stats_path, schema)
-            if cached_statistics.cache_fingerprint in {None, cache_fingerprint}:
-                print(f"[prepare] Reusing training statistics: {stats_path}", flush=True)
-                return stats_path
-            print(
-                "[prepare] Dataset or preprocessing settings changed; rebuilding cache.",
-                flush=True,
-            )
-        except (KeyError, OSError, ValueError) as error:
-            print(f"[prepare] Statistics cache is invalid; rebuilding ({error}).", flush=True)
-    if not stats_path.exists() and not force:
-        for fallback_value in config["data"].get("stats_fallback_paths", []):
-            fallback_path = resolve_project_path(config, fallback_value)
-            if fallback_path == stats_path or not fallback_path.is_file():
-                continue
-            try:
-                cached_statistics = TrainStatistics.load(fallback_path, schema)
-            except (KeyError, OSError, ValueError):
-                continue
-            if cached_statistics.cache_fingerprint not in {None, cache_fingerprint}:
-                continue
-            cached_statistics = replace(
-                cached_statistics,
-                cache_fingerprint=cache_fingerprint,
-            )
-            cached_statistics.save(stats_path)
-            print(
-                f"[prepare] Migrated reusable statistics cache: {fallback_path} -> {stats_path}",
-                flush=True,
-            )
-            return stats_path
+            TrainStatistics.load(dataset_stats_path, schema)
+            print(f"[prepare] Found train_stats.npz in dataset folder; running directly: {dataset_stats_path}", flush=True)
+            return dataset_stats_path
+        except Exception as error:
+            print(f"[prepare] train_stats.npz invalid; recalculating ({error}).", flush=True)
+
     print("[prepare] Discovering the training label vocabulary...", flush=True)
     label_values = discover_label_values(
         split_paths(config, "train"),
@@ -176,11 +153,10 @@ def prepare_statistics(config: dict, schema: DatasetSchema, *, force: bool = Fal
         schema,
         num_classes=config["data"]["num_classes"],
         min_std=config["preprocessing"].get("min_std", 1e-6),
-        cache_fingerprint=cache_fingerprint,
     )
-    stats.save(stats_path)
-    print(f"[prepare] Saved statistics: {stats_path}", flush=True)
-    return stats_path
+    stats.save(dataset_stats_path)
+    print(f"[prepare] Saved train_stats.npz to dataset folder: {dataset_stats_path}", flush=True)
+    return dataset_stats_path
 
 
 def _forward(model: nn.Module, inputs: torch.Tensor) -> ModelOutput:
