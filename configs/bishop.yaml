@@ -1,0 +1,78 @@
+seed: 2026
+run_name: bishop_seed2026
+
+data:
+  root: Dataset/DDI2025
+  train_files: [train_extracted.csv]
+  validation_files: [validation_extracted.csv]
+  test_files: [test_extracted.csv]
+  target_column: class
+  expected_num_features: 3780
+  num_classes: 178
+  block_size_mb: 64
+  # BiSHop attention is materially heavier than the numerical MLP.
+  batch_size: 32
+  stats_path: Dataset/DDI2025/train_stats.npz
+  split_manifest: null
+
+preprocessing:
+  max_rows: null
+  min_std: 1.0e-6
+  # The released model fits piecewise-linear bins on raw numerical values.
+  normalization: none
+
+model:
+  name: bishop
+  # Numerical piecewise-linear embedding and feature-cell patching.
+  embedding_dim: 32
+  output_dim: 8
+  patch_dim: 8
+  # Bi-directional generalized sparse Hopfield hierarchy.
+  factor: 8
+  aggregation: 4
+  model_dim: 128
+  feedforward_dim: 256
+  num_heads: 4
+  encoder_layers: 2
+  # The released CLI maps d_layers=1 to all encoder scales (e_layers + 1).
+  decoder_layers: 3
+  dropout: 0.1
+  # A bounded head is used because the paper's (4x, 2x, 1x) head would be
+  # prohibitively large for 3,780 descriptors.
+  classifier_hidden_dims: [512]
+  classifier_dropout: 0.2
+  # Uniform reservoir over the complete train split without loading it into RAM.
+  quantile_sample_size: 2048
+  quantile_max_rows: null
+
+loss:
+  # Original BiSHop classification experiments use cross-entropy.
+  name: cross_entropy
+  gamma: 0.0
+  class_weighting: none
+  effective_beta: 0.9999
+  label_smoothing: 0.0
+  moe_balance_weight: 0.0
+  router_z_weight: 0.0
+
+training:
+  epochs: 200
+  max_rows: null
+  max_steps_per_epoch: null
+  learning_rate: 5.0e-5
+  # Matches AdamW's default in the authors' released trainer.
+  weight_decay: 0.01
+  pretrained_checkpoint: null
+  gradient_clip_norm: 1.0
+  gradient_accumulation_steps: 1
+  mixed_precision: true
+  cosine_t_max: 200
+  early_stopping_patience: 40
+  selection_metric: macro_f1
+  device: auto
+  run_dir: runs/bishop_seed2026
+
+evaluation:
+  max_rows: null
+  top_k: [1, 3, 5]
+  calibration_bins: 15

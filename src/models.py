@@ -325,6 +325,34 @@ def build_model(config: dict, schema: DatasetSchema) -> nn.Module:
             dropout=model_config.get("dropout", 0.0),
             layer_norm=model_config.get("layer_norm", True),
         )
+    if name == "bishop":
+        # Keep the sizeable paper port isolated from the stable baseline/MoE
+        # definitions. Importing lazily also avoids a circular model registry.
+        from bishop import BiSHop
+
+        return BiSHop(
+            schema.num_features,
+            num_classes,
+            embedding_dim=model_config.get("embedding_dim", 32),
+            output_dim=model_config.get("output_dim", 8),
+            patch_dim=model_config.get("patch_dim", 8),
+            factor=model_config.get("factor", 8),
+            aggregation=model_config.get("aggregation", 4),
+            model_dim=model_config.get("model_dim", 128),
+            feedforward_dim=model_config.get("feedforward_dim", 256),
+            num_heads=model_config.get("num_heads", 4),
+            encoder_layers=model_config.get("encoder_layers", 2),
+            decoder_layers=model_config.get(
+                "decoder_layers", model_config.get("encoder_layers", 2) + 1
+            ),
+            dropout=model_config.get("dropout", 0.1),
+            classifier_hidden_dims=model_config.get(
+                "classifier_hidden_dims", [512]
+            ),
+            classifier_dropout=model_config.get("classifier_dropout", 0.2),
+            quantile_sample_size=model_config.get("quantile_sample_size", 2048),
+            quantile_max_rows=model_config.get("quantile_max_rows", 100_000),
+        )
     if name == "moeddi":
         return MoEDDI(
             schema.num_features,

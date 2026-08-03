@@ -99,7 +99,11 @@ def resolve_dataset_tag(config: dict[str, Any]) -> str:
     root_str = config.get("data", {}).get("root", "Dataset")
     data_path = Path(root_str).expanduser()
     name = data_path.name
-    if name.lower() in {"data", "dataset"} and data_path.parent.name and data_path.parent.name.lower() not in {"data", "dataset", "code", "projects"}:
+    if (
+        name.lower() in {"data", "dataset"}
+        and data_path.parent.name
+        and data_path.parent.name.lower() not in {"data", "dataset", "code", "projects"}
+    ):
         name = data_path.parent.name
     return name if name else "dataset"
 
@@ -132,8 +136,22 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("data.num_classes must be at least 2")
     if config["data"]["batch_size"] < 1:
         raise ValueError("data.batch_size must be positive")
-    if config["model"]["name"] not in {"linear", "mlp", "tddi_mlp", "moeddi"}:
+    if config["model"]["name"] not in {
+        "linear",
+        "mlp",
+        "tddi_mlp",
+        "moeddi",
+        "bishop",
+    }:
         raise ValueError(f"Unsupported model.name: {config['model']['name']}")
+    if config["model"]["name"] == "bishop":
+        model = config["model"]
+        if model.get("model_dim", 128) % model.get("num_heads", 4):
+            raise ValueError("bishop model_dim must be divisible by num_heads")
+        if model.get(
+            "decoder_layers", model.get("encoder_layers", 2) + 1
+        ) > model.get("encoder_layers", 2) + 1:
+            raise ValueError("bishop decoder_layers cannot exceed encoder_layers + 1")
     if config["loss"]["name"] not in {"cross_entropy", "focal"}:
         raise ValueError(f"Unsupported loss.name: {config['loss']['name']}")
     if config["loss"]["class_weighting"] not in {

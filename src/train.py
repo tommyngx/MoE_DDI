@@ -26,7 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--stats-path",
         help="Custom reusable preprocessing cache (default: <data>/train_stats.npz)",
     )
-    parser.add_argument("--model", choices=["moeddi", "tddi_mlp", "mlp", "linear"])
+    parser.add_argument(
+        "--model", choices=["moeddi", "tddi_mlp", "mlp", "linear", "bishop"]
+    )
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--learning-rate", type=float)

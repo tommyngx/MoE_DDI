@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import time
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -123,7 +122,11 @@ def prepare_statistics(config: dict, schema: DatasetSchema, *, force: bool = Fal
     if dataset_stats_path.is_file() and not force:
         try:
             TrainStatistics.load(dataset_stats_path, schema)
-            print(f"[prepare] Found train_stats.npz in dataset folder; running directly: {dataset_stats_path}", flush=True)
+            print(
+                "[prepare] Found train_stats.npz in dataset folder; "
+                f"running directly: {dataset_stats_path}",
+                flush=True,
+            )
             return dataset_stats_path
         except Exception as error:
             print(f"[prepare] train_stats.npz invalid; recalculating ({error}).", flush=True)
@@ -442,6 +445,29 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     statistics = TrainStatistics.load(stats_path, schema)
     device = select_device(config["training"].get("device", "auto"))
     model = build_model(config, schema).to(device)
+    if hasattr(model, "fit_quantiles") and not config["training"].get(
+        "pretrained_checkpoint"
+    ):
+        quantile_stream = make_stream(
+            config,
+            schema,
+            "train",
+            max_rows=model.quantile_max_rows,
+            shuffle=False,
+            seed=config["seed"],
+            label_values=statistics.label_values,
+        )
+        normalization = config["preprocessing"].get("normalization", "standardize")
+        feature_batches = (
+            statistics.transform(features, normalization)
+            for features, _ in quantile_stream
+        )
+        rows_seen = model.fit_quantiles(feature_batches, seed=config["seed"])
+        print(
+            f"[train] Fitted BiSHop quantile bins from {rows_seen:,} training rows "
+            f"(reservoir={model.quantile_sample_size:,}).",
+            flush=True,
+        )
     pretrained_path = _load_pretrained_weights(model, config, schema, statistics, device)
     tddi_pretrained_path = _load_tddi_backbone_weights(
         model, config, schema, statistics
@@ -873,7 +899,12 @@ def evaluate_checkpoint(
     _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
     np.save(info_dir / "test_confusion_matrix.npy", confusion)
 
-    plot_class_distribution(statistics.class_counts, statistics.label_values, run_dir, dataset_tag=dataset_tag)
+    plot_class_distribution(
+        statistics.class_counts,
+        statistics.label_values,
+        run_dir,
+        dataset_tag=dataset_tag,
+    )
     plot_evaluation_figures(aggregate, per_class, confusion, run_dir, dataset_tag=dataset_tag)
     history_path = info_dir / "history.json"
     history = []
