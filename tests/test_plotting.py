@@ -7,7 +7,7 @@ from plotting import (
 )
 
 
-def test_plot_training_history_writes_main_and_tagged_files(tmp_path):
+def test_plot_training_history_writes_tagged_files(tmp_path):
     history = [
         {
             "epoch": 1,
@@ -19,14 +19,14 @@ def test_plot_training_history_writes_main_and_tagged_files(tmp_path):
         }
     ]
     plot_training_history(history, tmp_path, epoch=1, dataset_tag="DDI2025")
-    assert (tmp_path / "plots" / "training_curves.png").is_file()
     assert (tmp_path / "training_DDI2025.png").is_file()
 
 
 def test_paper_plots_are_created(tmp_path):
     counts = np.asarray([100, 20, 2])
     labels = np.asarray([1, 4, 9])
-    plot_class_distribution(counts, labels, tmp_path)
+    plot_class_distribution(counts, labels, tmp_path, dataset_tag="DDI2025")
+    assert (tmp_path / "datadist_DDI2025.png").is_file()
     aggregate = {
         "accuracy": 0.7,
         "macro_f1": 0.6,
@@ -42,10 +42,9 @@ def test_paper_plots_are_created(tmp_path):
         {"class": 2, "original_class_id": 9, "support": 1, "f1": 0.1},
     ]
     confusion = np.asarray([[8, 2, 0], [1, 3, 1], [0, 1, 0]])
-    plot_evaluation_figures(aggregate, per_class, confusion, tmp_path)
-    paper = tmp_path / "plots" / "paper"
-    assert (paper / "class_distribution.png").is_file()
-    assert (paper / "per_class_f1_vs_support.png").is_file()
-    assert (paper / "confusion_matrix_normalized.png").is_file()
-    assert (paper / "test_metrics.png").is_file()
-    assert (paper / "router_specialization.png").is_file()
+    plot_evaluation_figures(aggregate, per_class, confusion, tmp_path, dataset_tag="DDI2025")
+    info_dir = tmp_path / "info_DDI2025"
+    assert (info_dir / "per_class_f1_vs_support.png").is_file()
+    assert (info_dir / "confusion_matrix_normalized.png").is_file()
+    assert (info_dir / "test_metrics.png").is_file()
+    assert (info_dir / "router_specialization.png").is_file()

@@ -130,15 +130,19 @@ def write_run_summary(
             if key in test_metrics:
                 lines.append(f"{key}: {_format_value(test_metrics[key])}")
 
+    from config import resolve_dataset_tag
+
+    tag = resolve_dataset_tag(config)
+
     _section(lines, "Artifacts")
     lines.extend(
         [
-            f"Best checkpoint: {run_dir / 'best.pt'}",
-            f"Last checkpoint: {run_dir / 'last.pt'}",
-            f"Configuration: {run_dir / 'info' / 'resolved_config.json'}",
-            f"Training history: {run_dir / 'info' / 'history.json'}",
-            f"Test metrics: {run_dir / 'info' / 'test_metrics.json'}",
-            f"Plots: {run_dir / 'plots'}",
+            f"Best checkpoint: {run_dir / f'best_{tag}.pt'}",
+            f"Configuration: {run_dir / f'info_{tag}' / 'resolved_config.json'}",
+            f"Training history: {run_dir / f'info_{tag}' / 'history.json'}",
+            f"Test metrics: {run_dir / f'info_{tag}' / 'test_metrics.json'}",
+            f"Training plot: {run_dir / f'training_{tag}.png'}",
+            f"Class distribution plot: {run_dir / f'datadist_{tag}.png'}",
         ]
     )
     lines.extend(
@@ -149,13 +153,7 @@ def write_run_summary(
         ]
     )
 
-    from config import resolve_dataset_tag
-
-    tag = resolve_dataset_tag(config)
     tagged_path = run_dir / f"summary_{tag}.txt"
-    path = run_dir / "summary.txt"
     run_dir.mkdir(parents=True, exist_ok=True)
-    text_content = "\n".join(lines)
-    tagged_path.write_text(text_content, encoding="utf-8")
-    path.write_text(text_content, encoding="utf-8")
+    tagged_path.write_text("\n".join(lines), encoding="utf-8")
     return tagged_path

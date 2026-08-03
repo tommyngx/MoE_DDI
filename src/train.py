@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from config import load_config, resolve_project_path, shared_stats_path
+from config import load_config, resolve_dataset_tag, resolve_project_path, shared_stats_path
 from engine import load_and_validate_schema, prepare_statistics, resolve_run_dir, train
 
 
@@ -126,16 +126,16 @@ def main() -> None:
         prepare_statistics(config, schema, force=True)
     best_checkpoint = train(config)
     run_dir = resolve_run_dir(config)
+    tag = resolve_dataset_tag(config)
     print(
         json.dumps(
             {
                 "run_dir": str(run_dir),
                 "best_checkpoint": str(best_checkpoint),
-                "last_checkpoint": str(run_dir / "last.pt"),
-                "statistics_cache": config["data"]["stats_path"],
-                "training_plot": str(run_dir / "plots" / "training_curves.png"),
-                "paper_plots": str(run_dir / "plots" / "paper"),
-                "summary": str(run_dir / "summary.txt"),
+                "training_plot": str(run_dir / f"training_{tag}.png"),
+                "datadist_plot": str(run_dir / f"datadist_{tag}.png"),
+                "summary": str(run_dir / f"summary_{tag}.txt"),
+                "info_dir": str(run_dir / f"info_{tag}"),
             },
             indent=2,
         )

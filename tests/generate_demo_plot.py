@@ -52,5 +52,5 @@ if __name__ == "__main__":
     out_dir = Path(__file__).parent / "demo_output"
     out_dir.mkdir(exist_ok=True)
     history = generate_demo_data(50)
-    plot_training_history(history, out_dir, epoch=50)
-    print(f"Plot saved to: {out_dir / 'plots' / 'training_curves.png'}")
+    plot_training_history(history, out_dir, epoch=50, dataset_tag="demo")
+    print(f"Plot saved to: {out_dir / 'training_demo.png'}")

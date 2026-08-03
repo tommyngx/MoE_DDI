@@ -239,7 +239,6 @@ def plot_training_history(
     run_path = Path(run_dir)
     tag = dataset_tag or "dataset"
     _save_figure(figure, run_path / f"training_{tag}.png")
-    _save_figure(figure, run_path / "plots" / "training_curves.png")
     plt.close(figure)
 
 
@@ -269,7 +268,6 @@ def plot_class_distribution(
     run_path = Path(run_dir)
     tag = dataset_tag or "dataset"
     _save_figure(figure, run_path / f"datadist_{tag}.png")
-    _save_figure(figure, run_path / "plots" / "paper" / "class_distribution.png")
     plt.close(figure)
 
 
@@ -278,8 +276,11 @@ def plot_evaluation_figures(
     per_class: list[dict],
     confusion: np.ndarray,
     run_dir: str | Path,
+    dataset_tag: str | None = None,
 ) -> None:
-    paper_dir = Path(run_dir) / "plots" / "paper"
+    tag = dataset_tag or "dataset"
+    target_dir = Path(run_dir) / f"info_{tag}"
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     support = np.asarray([row["support"] for row in per_class], dtype=np.float64)
     f1 = np.asarray([row["f1"] for row in per_class], dtype=np.float64)
@@ -299,7 +300,7 @@ def plot_evaluation_figures(
     axis.set_title("Long-tail performance: F1 versus class support")
     axis.grid(alpha=0.25)
     figure.colorbar(scatter, ax=axis, label="F1")
-    _save_figure(figure, paper_dir / "per_class_f1_vs_support.png")
+    _save_figure(figure, target_dir / "per_class_f1_vs_support.png")
     plt.close(figure)
 
     row_totals = confusion.sum(axis=1, keepdims=True)
@@ -315,7 +316,7 @@ def plot_evaluation_figures(
     axis.set_ylabel("True internal class")
     axis.set_title("Row-normalized test confusion matrix")
     figure.colorbar(image, ax=axis, label="Fraction")
-    _save_figure(figure, paper_dir / "confusion_matrix_normalized.png")
+    _save_figure(figure, target_dir / "confusion_matrix_normalized.png")
     plt.close(figure)
 
     metric_keys = [
@@ -338,7 +339,7 @@ def plot_evaluation_figures(
     axis.set_title("Held-out test metrics")
     axis.tick_params(axis="x", rotation=20)
     axis.grid(axis="y", alpha=0.25)
-    _save_figure(figure, paper_dir / "test_metrics.png")
+    _save_figure(figure, target_dir / "test_metrics.png")
     plt.close(figure)
 
     router_values = aggregate.get("mean_router_probability")
@@ -351,5 +352,5 @@ def plot_evaluation_figures(
         axis.set_title("MoEDDI expert specialization")
         axis.tick_params(axis="x", rotation=35)
         axis.grid(axis="y", alpha=0.25)
-        _save_figure(figure, paper_dir / "router_specialization.png")
+        _save_figure(figure, target_dir / "router_specialization.png")
         plt.close(figure)

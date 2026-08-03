@@ -484,20 +484,13 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     dataset_tag = resolve_dataset_tag(config)
     run_dir = resolve_run_dir(config)
     info_dir = run_dir / f"info_{dataset_tag}"
-    legacy_info_dir = run_dir / "info"
     run_dir.mkdir(parents=True, exist_ok=True)
     info_dir.mkdir(parents=True, exist_ok=True)
-    legacy_info_dir.mkdir(parents=True, exist_ok=True)
 
-    def _write_info_json(filename: str, payload: Any) -> None:
-        write_json(info_dir / filename, payload)
-        write_json(legacy_info_dir / filename, payload)
-
-    _write_info_json("resolved_config.json", config)
+    write_json(info_dir / "resolved_config.json", config)
     schema.write_json(info_dir / "schema.json")
-    schema.write_json(legacy_info_dir / "schema.json")
-    _write_info_json(
-        "label_mapping.json",
+    write_json(
+        info_dir / "label_mapping.json",
         {
             "internal_to_original": {
                 str(index): int(value)
@@ -522,8 +515,8 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         f"parameters={parameter_summary['trainable']:,}",
         flush=True,
     )
-    _write_info_json(
-        "model_summary.json",
+    write_json(
+        info_dir / "model_summary.json",
         {
             "model": config["model"]["name"],
             "parameters": parameter_summary,
@@ -544,9 +537,6 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     best_value = float("-inf")
     patience = 0
     best_path = run_dir / f"best_{dataset_tag}.pt"
-    legacy_best_path = run_dir / "best.pt"
-    last_path = run_dir / f"last_{dataset_tag}.pt"
-    legacy_last_path = run_dir / "last.pt"
     accumulation = training_config.get("gradient_accumulation_steps", 1)
     max_steps = training_config.get("max_steps_per_epoch")
     started = time.time()
@@ -749,7 +739,6 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         }
         history.append(epoch_record)
         write_json(info_dir / "history.json", history)
-        write_json(legacy_info_dir / "history.json", history)
         plot_training_history(history, run_dir, epoch=epoch + 1, dataset_tag=dataset_tag)
         print(
             f"[epoch {epoch + 1}/{training_config['epochs']}] "
@@ -760,29 +749,26 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
             flush=True,
         )
 
-        checkpoint = {
-            "epoch": epoch + 1,
-            "model_state": model.state_dict(),
-            "optimizer_state": optimizer.state_dict(),
-            "schema_fingerprint": schema.fingerprint,
-            "label_values": statistics.label_values,
-            "config": config,
-            "validation": validation,
-            "pretrained_checkpoint": (
-                str(pretrained_path) if pretrained_path is not None else None
-            ),
-            "tddi_pretrained_checkpoint": (
-                str(tddi_pretrained_path) if tddi_pretrained_path is not None else None
-            ),
-        }
-        _save_checkpoint(last_path, checkpoint)
-        _save_checkpoint(legacy_last_path, checkpoint)
         selection = float(validation[training_config["selection_metric"]])
         if selection > best_value:
             best_value = selection
             patience = 0
+            checkpoint = {
+                "epoch": epoch + 1,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "schema_fingerprint": schema.fingerprint,
+                "label_values": statistics.label_values,
+                "config": config,
+                "validation": validation,
+                "pretrained_checkpoint": (
+                    str(pretrained_path) if pretrained_path is not None else None
+                ),
+                "tddi_pretrained_checkpoint": (
+                    str(tddi_pretrained_path) if tddi_pretrained_path is not None else None
+                ),
+            }
             _save_checkpoint(best_path, checkpoint)
-            _save_checkpoint(legacy_best_path, checkpoint)
         else:
             patience += 1
         write_run_summary(
@@ -881,19 +867,14 @@ def evaluate_checkpoint(
     dataset_tag = resolve_dataset_tag(config)
     run_dir = resolve_run_dir(config)
     info_dir = run_dir / f"info_{dataset_tag}"
-    legacy_info_dir = run_dir / "info"
     info_dir.mkdir(parents=True, exist_ok=True)
-    legacy_info_dir.mkdir(parents=True, exist_ok=True)
 
     write_json(info_dir / "test_metrics.json", aggregate)
-    write_json(legacy_info_dir / "test_metrics.json", aggregate)
     _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
-    _write_per_class_csv(legacy_info_dir / "test_per_class.csv", per_class)
     np.save(info_dir / "test_confusion_matrix.npy", confusion)
-    np.save(legacy_info_dir / "test_confusion_matrix.npy", confusion)
 
     plot_class_distribution(statistics.class_counts, statistics.label_values, run_dir, dataset_tag=dataset_tag)
-    plot_evaluation_figures(aggregate, per_class, confusion, run_dir)
+    plot_evaluation_figures(aggregate, per_class, confusion, run_dir, dataset_tag=dataset_tag)
     history_path = info_dir / "history.json"
     history = []
     if history_path.is_file():
