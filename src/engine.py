@@ -783,7 +783,13 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         }
         history.append(epoch_record)
         write_yaml(info_dir / "history.yaml", history)
-        plot_training_history(history, run_dir, epoch=epoch + 1, dataset_tag=dataset_tag)
+        plot_training_history(
+            history,
+            run_dir,
+            epoch=epoch + 1,
+            dataset_tag=dataset_tag,
+            model_name=config["model"]["name"],
+        )
         print(
             f"[epoch {epoch + 1}/{training_config['epochs']}] "
             f"train_loss={epoch_record['train_classification_loss']:.4f} "

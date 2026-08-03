@@ -93,12 +93,28 @@ def _format_time(seconds: float) -> str:
     return f"{hours}h {mins}m"
 
 
+def _format_model_title(model_name: str | None) -> str:
+    if not model_name:
+        return "Model"
+    name_lower = model_name.lower()
+    mapping = {
+        "moeddi": "MoEDDI",
+        "tabtransformer": "TabTransformer",
+        "bishop": "BISHOP",
+        "tddi_mlp": "TDDI",
+        "linear": "Linear",
+        "mlp": "MLP",
+    }
+    return mapping.get(name_lower, model_name.upper())
+
+
 def plot_training_history(
     history: list[dict],
     run_dir: str | Path,
     *,
     epoch: int,
     dataset_tag: str | None = None,
+    model_name: str | None = None,
 ) -> None:
     """Update the main training plot in BB2 style with thick dark spines, off-white background, navy grid, and highlighted scatter points."""
     if not history:
@@ -166,7 +182,7 @@ def plot_training_history(
     )
     axes[0, 1].set_title("Validation Accuracy & Macro-F1", color="#222831", fontsize=12, fontweight="bold")
 
-    # Subplot 3: MoE Auxiliary Losses
+    # Subplot 3: Auxiliary & Regularization Losses
     s_balance = _series(history, "train_balance_loss")
     s_router_z = _series(history, "train_router_z_loss")
     _plot_series(axes[1, 0], epochs, s_balance, "Balance Loss", "#06b6d4", mode="min", linewidth=1.8, mark_best=False)
@@ -177,26 +193,26 @@ def plot_training_history(
             axes[1, 0],
             epochs,
             s_moe_aux,
-            "MoE Aux",
+            "Aux Loss",
             c_aux1,
             mode="min",
             linewidth=1.8,
             mark_best=True,
-            best_label_prefix="MoE Aux",
+            best_label_prefix="Aux Loss",
             best_marker_color=c_scatter,
         )
     if "train_global_auxiliary_loss" in history[0] and history[0]["train_global_auxiliary_loss"] is not None:
         s_global_aux = _series(history, "train_global_auxiliary_loss")
         _plot_series(axes[1, 0], epochs, s_global_aux, "Global Aux", c_aux2, mode="min", linewidth=1.8, mark_best=False)
-    axes[1, 0].set_title("MoE & Auxiliary Losses", color="#222831", fontsize=12, fontweight="bold")
+    axes[1, 0].set_title("Auxiliary & Regularization Losses", color="#222831", fontsize=12, fontweight="bold")
 
     # Subplot 4: Learning Rate (1st vs 2nd Group)
     lr_1st = _series(history, "learning_rate_1st") if "learning_rate_1st" in history[0] else _series(history, "learning_rate")
-    _plot_series(axes[1, 1], epochs, lr_1st, "1st: MoE Head LR", c_lr1, mode="max", is_lr=True, mark_best=False)
+    _plot_series(axes[1, 1], epochs, lr_1st, "1st: Primary Head LR", c_lr1, mode="max", is_lr=True, mark_best=False)
     
     if "learning_rate_2nd" in history[0] and any(row.get("learning_rate_2nd") is not None for row in history):
         lr_2nd = _series(history, "learning_rate_2nd")
-        _plot_series(axes[1, 1], epochs, lr_2nd, "2nd: T-DDI Backbone LR", c_lr2, mode="max", is_lr=True, linestyle="--", mark_best=False)
+        _plot_series(axes[1, 1], epochs, lr_2nd, "2nd: Backbone LR", c_lr2, mode="max", is_lr=True, linestyle="--", mark_best=False)
 
     axes[1, 1].set_title("Learning Rate Schedule (1st & 2nd Groups)", color="#222831", fontsize=12, fontweight="bold")
     axes[1, 1].ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
@@ -233,7 +249,8 @@ def plot_training_history(
         avg_time_str = f"{avg_per_epoch:.2f}s/epoch" if avg_per_epoch < 60 else _format_time(avg_per_epoch) + "/epoch"
         time_info = f" | Total: {total_time_str} ({avg_time_str})"
 
-    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch}){time_info}", color="#222831", fontsize=14, fontweight="bold", y=0.99)
+    model_title = _format_model_title(model_name)
+    figure.suptitle(f"{model_title} Training Progress (Epoch {epoch}){time_info}", color="#222831", fontsize=14, fontweight="bold", y=0.99)
     figure.tight_layout()
 
     run_path = Path(run_dir)
