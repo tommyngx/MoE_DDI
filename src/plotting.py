@@ -267,7 +267,9 @@ def plot_class_distribution(
     )
     run_path = Path(run_dir)
     tag = dataset_tag or "dataset"
-    _save_figure(figure, run_path / f"datadist_{tag}.png")
+    target_dir = run_path / f"info_{tag}" if dataset_tag else run_path
+    target_dir.mkdir(parents=True, exist_ok=True)
+    _save_figure(figure, target_dir / f"datadist_{tag}.png")
     plt.close(figure)
 
 

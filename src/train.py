@@ -135,7 +135,7 @@ def main() -> None:
                 "run_dir": str(run_dir),
                 "best_checkpoint": str(best_checkpoint),
                 "training_plot": str(run_dir / f"training_{tag}.png"),
-                "datadist_plot": str(run_dir / f"datadist_{tag}.png"),
+                "datadist_plot": str(run_dir / f"info_{tag}" / f"datadist_{tag}.png"),
                 "summary": str(run_dir / f"summary_{tag}.txt"),
                 "info_dir": str(run_dir / f"info_{tag}"),
             },

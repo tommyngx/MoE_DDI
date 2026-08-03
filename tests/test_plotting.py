@@ -27,7 +27,7 @@ def test_paper_plots_are_created(tmp_path):
     counts = np.asarray([100, 20, 2])
     labels = np.asarray([1, 4, 9])
     plot_class_distribution(counts, labels, tmp_path, dataset_tag="DDI2025")
-    assert (tmp_path / "datadist_DDI2025.png").is_file()
+    assert (tmp_path / "info_DDI2025" / "datadist_DDI2025.png").is_file()
     aggregate = {
         "accuracy": 0.7,
         "macro_f1": 0.6,

@@ -147,7 +147,7 @@ def write_run_summary(
             f"Training history: {run_dir / f'info_{tag}' / 'history.yaml'}",
             f"Test metrics: {run_dir / f'info_{tag}' / 'test_metrics.yaml'}",
             f"Training plot: {run_dir / f'training_{tag}.png'}",
-            f"Class distribution plot: {run_dir / f'datadist_{tag}.png'}",
+            f"Class distribution plot: {run_dir / f'info_{tag}' / f'datadist_{tag}.png'}",
             f"t-SNE plot: {run_dir / f'info_{tag}' / 'tsne_top10_classes.png'}",
         ]
     )
