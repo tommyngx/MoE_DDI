@@ -45,37 +45,39 @@ def _plot_series(
     linestyle: str = "-",
     linewidth: float = 2.0,
     is_lr: bool = False,
-    mark_star: bool = True,
+    mark_best: bool = True,
+    best_label_prefix: str = "Val",
+    best_marker_color: str = "blue",
 ) -> None:
     valid_pairs = [(float(v), int(e)) for v, e in zip(values, epochs) if not np.isnan(v)]
     if not valid_pairs:
         return
 
-    if mode == "min":
-        best_v, best_e = min(valid_pairs, key=lambda x: x[0])
-        prefix = "1st Min"
-    else:
-        best_v, best_e = max(valid_pairs, key=lambda x: x[0])
-        prefix = "1st Max" if not is_lr else "Max"
+    # Main series curve
+    axis.plot(epochs, values, label=name, color=color, linestyle=linestyle, linewidth=linewidth)
 
-    if is_lr:
-        val_str = f"{best_v:.4e}"
-    else:
+    # BB2 style scatter point for highlighted best epoch
+    if mark_best and not is_lr:
+        if mode == "min":
+            best_v, best_e = min(valid_pairs, key=lambda x: x[0])
+            tag = f"1st {best_label_prefix}"
+        else:
+            best_v, best_e = max(valid_pairs, key=lambda x: x[0])
+            tag = f"1st {best_label_prefix}"
+
         val_str = f"{best_v:.4f}"
+        scatter_label = f"{tag}: {val_str} (Epoch {best_e})"
 
-    label = f"{name}\n{prefix}: {val_str} (E{best_e})"
-    axis.plot(epochs, values, label=label, color=color, linestyle=linestyle, linewidth=linewidth)
-
-    if mark_star and not is_lr:
         axis.scatter(
             [best_e],
             [best_v],
-            color=color,
+            s=180,
+            color=best_marker_color,
             marker="*",
-            s=160,
             zorder=6,
-            edgecolors="black",
+            edgecolors="#161A1F",
             linewidths=0.8,
+            label=scatter_label,
         )
 
 
@@ -91,76 +93,136 @@ def _format_time(seconds: float) -> str:
     return f"{hours}h {mins}m"
 
 
-def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: int) -> None:
-    """Update the main training plot with rich aesthetics, metric-specific 1st best values, star markers, multi-group LR, and elapsed timing."""
+def plot_training_history(
+    history: list[dict],
+    run_dir: str | Path,
+    *,
+    epoch: int,
+    dataset_tag: str | None = None,
+) -> None:
+    """Update the main training plot in BB2 style with thick dark spines, off-white background, navy grid, and highlighted scatter points."""
     if not history:
         return
     epochs = _series(history, "epoch")
     
-    # Modern color palette
-    c_train = "#1f77b4"      # Steel blue
-    c_val = "#ff7f0e"        # Warm orange
-    c_acc = "#2ca02c"        # Forest green
-    c_f1 = "#9467bd"         # Elegant purple
-    c_aux1 = "#d62728"       # Red
-    c_aux2 = "#8c564b"       # Brown
-    c_lr1 = "#008080"        # Teal (1st Group)
-    c_lr2 = "#e377c2"        # Pink/Magenta (2nd Group)
+    # BB2 / Modern Color Palette
+    c_train = "#d9534f"      # BB2 Red
+    c_val = "#22c55e"        # Green
+    c_acc = "#22c55e"        # Green
+    c_f1 = "#8b5cf6"         # Purple
+    c_aux1 = "#ef4444"       # Light red
+    c_aux2 = "#f59e0b"       # Amber
+    c_lr1 = "#0284c7"        # Sky Blue (1st Group)
+    c_lr2 = "#ec4899"        # Pink/Magenta (2nd Group)
+    c_scatter = "#1d4ed8"    # BB2 Highlight Blue
 
-    figure, axes = plt.subplots(2, 2, figsize=(15, 9.5), dpi=160, facecolor="white")
+    figure, axes = plt.subplots(2, 2, figsize=(15, 9.5), dpi=160)
 
-    # Subplot 1: Classification Loss (Best = Min)
+    # BB2 Light background color (#f7f7f7)
+    figure.patch.set_facecolor("#f7f7f7")
+
+    # Subplot 1: Classification Loss
     s_train_loss = _series(history, "train_classification_loss")
     s_val_loss = _series(history, "validation", "loss")
-    _plot_series(axes[0, 0], epochs, s_train_loss, "Train Loss", c_train, mode="min")
-    _plot_series(axes[0, 0], epochs, s_val_loss, "Val Loss", c_val, mode="min", linestyle="--")
-    axes[0, 0].set_title("Classification Loss", fontsize=12, fontweight="bold", color="#111111")
-    axes[0, 0].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
+    _plot_series(axes[0, 0], epochs, s_train_loss, "Training Loss", c_train, mode="min", mark_best=False)
+    _plot_series(
+        axes[0, 0],
+        epochs,
+        s_val_loss,
+        "Val Loss",
+        c_val,
+        mode="min",
+        linestyle="--",
+        mark_best=True,
+        best_label_prefix="Val Loss",
+        best_marker_color=c_scatter,
+    )
+    axes[0, 0].set_title("Training and Validation Loss", color="#222831", fontsize=12, fontweight="bold")
 
-    # Subplot 2: Validation Metrics (Best = Max)
+    # Subplot 2: Validation Metrics
     s_val_acc = _series(history, "validation", "accuracy")
     s_val_f1 = _series(history, "validation", "macro_f1")
-    _plot_series(axes[0, 1], epochs, s_val_acc, "Accuracy", c_acc, mode="max")
-    _plot_series(axes[0, 1], epochs, s_val_f1, "Macro-F1", c_f1, mode="max")
-    axes[0, 1].set_title("Validation Metrics", fontsize=12, fontweight="bold", color="#111111")
-    axes[0, 1].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
+    _plot_series(
+        axes[0, 1],
+        epochs,
+        s_val_acc,
+        "Val Accuracy",
+        c_acc,
+        mode="max",
+        mark_best=True,
+        best_label_prefix="Accuracy",
+        best_marker_color=c_scatter,
+    )
+    _plot_series(
+        axes[0, 1],
+        epochs,
+        s_val_f1,
+        "Val Macro-F1",
+        c_f1,
+        mode="max",
+        mark_best=True,
+        best_label_prefix="Macro-F1",
+        best_marker_color="#b91c1c",
+    )
+    axes[0, 1].set_title("Validation Accuracy & Macro-F1", color="#222831", fontsize=12, fontweight="bold")
 
-    # Subplot 3: MoE Auxiliary Losses (Best = Min)
+    # Subplot 3: MoE Auxiliary Losses
     s_balance = _series(history, "train_balance_loss")
     s_router_z = _series(history, "train_router_z_loss")
-    _plot_series(axes[1, 0], epochs, s_balance, "Balance Loss", "#17becf", mode="min", linewidth=1.8)
-    _plot_series(axes[1, 0], epochs, s_router_z, "Router Z Loss", "#bcbd22", mode="min", linewidth=1.8)
+    _plot_series(axes[1, 0], epochs, s_balance, "Balance Loss", "#06b6d4", mode="min", linewidth=1.8, mark_best=False)
+    _plot_series(axes[1, 0], epochs, s_router_z, "Router Z Loss", "#eab308", mode="min", linewidth=1.8, mark_best=False)
     if "train_moe_auxiliary_loss" in history[0] and history[0]["train_moe_auxiliary_loss"] is not None:
         s_moe_aux = _series(history, "train_moe_auxiliary_loss")
-        _plot_series(axes[1, 0], epochs, s_moe_aux, "MoE Aux", c_aux1, mode="min", linewidth=1.8)
+        _plot_series(
+            axes[1, 0],
+            epochs,
+            s_moe_aux,
+            "MoE Aux",
+            c_aux1,
+            mode="min",
+            linewidth=1.8,
+            mark_best=True,
+            best_label_prefix="MoE Aux",
+            best_marker_color=c_scatter,
+        )
     if "train_global_auxiliary_loss" in history[0] and history[0]["train_global_auxiliary_loss"] is not None:
         s_global_aux = _series(history, "train_global_auxiliary_loss")
-        _plot_series(axes[1, 0], epochs, s_global_aux, "Global Aux", c_aux2, mode="min", linewidth=1.8)
-    axes[1, 0].set_title("MoE & Auxiliary Losses", fontsize=12, fontweight="bold", color="#111111")
-    axes[1, 0].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
+        _plot_series(axes[1, 0], epochs, s_global_aux, "Global Aux", c_aux2, mode="min", linewidth=1.8, mark_best=False)
+    axes[1, 0].set_title("MoE & Auxiliary Losses", color="#222831", fontsize=12, fontweight="bold")
 
     # Subplot 4: Learning Rate (1st vs 2nd Group)
     lr_1st = _series(history, "learning_rate_1st") if "learning_rate_1st" in history[0] else _series(history, "learning_rate")
-    _plot_series(axes[1, 1], epochs, lr_1st, "1st: MoE Head", c_lr1, mode="max", is_lr=True, mark_star=False)
+    _plot_series(axes[1, 1], epochs, lr_1st, "1st: MoE Head LR", c_lr1, mode="max", is_lr=True, mark_best=False)
     
     if "learning_rate_2nd" in history[0] and any(row.get("learning_rate_2nd") is not None for row in history):
         lr_2nd = _series(history, "learning_rate_2nd")
-        _plot_series(axes[1, 1], epochs, lr_2nd, "2nd: T-DDI Backbone", c_lr2, mode="max", is_lr=True, linestyle="--", mark_star=False)
+        _plot_series(axes[1, 1], epochs, lr_2nd, "2nd: T-DDI Backbone LR", c_lr2, mode="max", is_lr=True, linestyle="--", mark_best=False)
 
-    axes[1, 1].set_title("Learning Rate Schedule (1st & 2nd Groups)", fontsize=12, fontweight="bold", color="#111111")
+    axes[1, 1].set_title("Learning Rate Schedule (1st & 2nd Groups)", color="#222831", fontsize=12, fontweight="bold")
     axes[1, 1].ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
-    axes[1, 1].legend(frameon=True, framealpha=0.95, facecolor="white", edgecolor="#cccccc", fontsize=8.5)
 
-    # Styling all subplots cleanly for headless/server compatibility
+    # Apply BB2 styling to all subplots
     for axis in axes.flat:
-        axis.set_facecolor("white")
-        axis.set_xlabel("Epoch", fontsize=10, color="#111111")
-        axis.set_axisbelow(True)
-        axis.grid(True, linestyle="--", linewidth=0.8, color="#d0d0d0", alpha=0.8)
-        axis.tick_params(labelsize=9, labelcolor="#111111")
+        axis.set_facecolor("#f7f7f7")
+        axis.set_xlabel("Epochs", color="#222831", fontsize=10)
+        axis.tick_params(axis="x", colors="#222831", labelsize=9)
+        axis.tick_params(axis="y", colors="#222831", labelsize=9)
+        axis.grid(True, linestyle="--", alpha=0.5, color="navy")
+        
+        # BB2 thick dark spines around subplot
         for spine in axis.spines.values():
-            spine.set_color("#cccccc")
-            spine.set_linewidth(1.0)
+            spine.set_visible(True)
+            spine.set_linewidth(2)
+            spine.set_color("#161A1F")
+
+        # BB2 style legend box
+        legend = axis.legend(frameon=True, fontsize=8.5)
+        if legend:
+            legend.get_frame().set_facecolor("white")
+            legend.get_frame().set_edgecolor("#161A1F")
+            legend.get_frame().set_linewidth(1.2)
+            for text in legend.get_texts():
+                text.set_color("#222831")
 
     # Calculate timing stats
     elapsed_seconds = float(history[-1].get("elapsed_seconds", 0.0))
@@ -171,12 +233,13 @@ def plot_training_history(history: list[dict], run_dir: str | Path, *, epoch: in
         avg_time_str = f"{avg_per_epoch:.2f}s/epoch" if avg_per_epoch < 60 else _format_time(avg_per_epoch) + "/epoch"
         time_info = f" | Total: {total_time_str} ({avg_time_str})"
 
-    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch}){time_info}", fontsize=13, fontweight="bold", y=0.99, color="#111111")
+    figure.suptitle(f"MoEDDI Training Progress (Epoch {epoch}){time_info}", color="#222831", fontsize=14, fontweight="bold", y=0.99)
     figure.tight_layout()
 
-    plot_dir = Path(run_dir) / "plots"
-    _save_figure(figure, plot_dir / "training_curves.png")
-    _save_figure(figure, plot_dir / "epochs" / f"epoch_{epoch:03d}.png")
+    run_path = Path(run_dir)
+    tag = dataset_tag or "dataset"
+    _save_figure(figure, run_path / f"training_{tag}.png")
+    _save_figure(figure, run_path / "plots" / "training_curves.png")
     plt.close(figure)
 
 
@@ -184,6 +247,7 @@ def plot_class_distribution(
     class_counts: np.ndarray,
     label_values: np.ndarray,
     run_dir: str | Path,
+    dataset_tag: str | None = None,
 ) -> None:
     order = np.argsort(class_counts)[::-1]
     figure, axis = plt.subplots(figsize=(12, 5))
@@ -202,7 +266,10 @@ def plot_class_distribution(
         ha="right",
         va="top",
     )
-    _save_figure(figure, Path(run_dir) / "plots" / "paper" / "class_distribution.png")
+    run_path = Path(run_dir)
+    tag = dataset_tag or "dataset"
+    _save_figure(figure, run_path / f"datadist_{tag}.png")
+    _save_figure(figure, run_path / "plots" / "paper" / "class_distribution.png")
     plt.close(figure)
 
 

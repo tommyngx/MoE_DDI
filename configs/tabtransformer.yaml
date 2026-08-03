@@ -1,0 +1,53 @@
+seed: 2026
+run_name: tabtransformer_2026
+
+data:
+  root: Dataset
+  train_files: [train_extracted.csv]
+  validation_files: [validation_extracted.csv]
+  test_files: [test_extracted.csv]
+  target_column: class
+  expected_num_features: 3780
+  num_classes: 178
+  block_size_mb: 64
+  batch_size: 256
+  stats_path: runs/_cache/train_stats_full.npz
+  split_manifest: null
+
+preprocessing:
+  max_rows: null
+  min_std: 1.0e-6
+  normalization: none
+
+model:
+  name: tddi_mlp
+  hidden_multipliers: [2, 2]
+
+loss:
+  name: focal
+  gamma: 1.0
+  class_weighting: none
+  effective_beta: 0.9999
+  label_smoothing: 0.0
+  moe_balance_weight: 0.0
+  router_z_weight: 0.0
+
+training:
+  epochs: 500
+  max_rows: null
+  max_steps_per_epoch: null
+  learning_rate: 0.00005
+  weight_decay: 1.5446e-4
+  gradient_clip_norm: 1.0
+  gradient_accumulation_steps: 1
+  mixed_precision: true
+  cosine_t_max: 500
+  early_stopping_patience: 50
+  selection_metric: macro_f1
+  device: auto
+  run_dir: runs/tabtransformer_2026
+
+evaluation:
+  max_rows: null
+  top_k: [1, 3, 5]
+  calibration_bins: 15

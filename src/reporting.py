@@ -149,9 +149,13 @@ def write_run_summary(
         ]
     )
 
+    from config import resolve_dataset_tag
+
+    tag = resolve_dataset_tag(config)
+    tagged_path = run_dir / f"summary_{tag}.txt"
     path = run_dir / "summary.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".txt.tmp")
-    temporary.write_text("\n".join(lines), encoding="utf-8")
-    os.replace(temporary, path)
-    return path
+    run_dir.mkdir(parents=True, exist_ok=True)
+    text_content = "\n".join(lines)
+    tagged_path.write_text(text_content, encoding="utf-8")
+    path.write_text(text_content, encoding="utf-8")
+    return tagged_path

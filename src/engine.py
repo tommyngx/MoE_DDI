@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from config import resolve_project_path, split_paths
+from config import resolve_dataset_tag, resolve_project_path, split_paths
 from data import CsvBatchStream, discover_label_values, load_split_manifest
 from losses import build_loss
 from metrics import ClassificationMetrics
@@ -505,14 +505,23 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     )
     use_scaler = bool(training_config.get("mixed_precision", True) and device.type == "cuda")
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
+    dataset_tag = resolve_dataset_tag(config)
     run_dir = resolve_run_dir(config)
-    info_dir = run_dir / "info"
+    info_dir = run_dir / f"info_{dataset_tag}"
+    legacy_info_dir = run_dir / "info"
     run_dir.mkdir(parents=True, exist_ok=True)
     info_dir.mkdir(parents=True, exist_ok=True)
-    write_json(info_dir / "resolved_config.json", config)
+    legacy_info_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_info_json(filename: str, payload: Any) -> None:
+        write_json(info_dir / filename, payload)
+        write_json(legacy_info_dir / filename, payload)
+
+    _write_info_json("resolved_config.json", config)
     schema.write_json(info_dir / "schema.json")
-    write_json(
-        info_dir / "label_mapping.json",
+    schema.write_json(legacy_info_dir / "schema.json")
+    _write_info_json(
+        "label_mapping.json",
         {
             "internal_to_original": {
                 str(index): int(value)
@@ -530,14 +539,15 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         statistics.class_counts,
         statistics.label_values,
         run_dir,
+        dataset_tag=dataset_tag,
     )
     print(
         f"[train] model={config['model']['name']} device={device} "
         f"parameters={parameter_summary['trainable']:,}",
         flush=True,
     )
-    write_json(
-        info_dir / "model_summary.json",
+    _write_info_json(
+        "model_summary.json",
         {
             "model": config["model"]["name"],
             "parameters": parameter_summary,
@@ -557,7 +567,10 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     history: list[dict] = []
     best_value = float("-inf")
     patience = 0
-    best_path = run_dir / "best.pt"
+    best_path = run_dir / f"best_{dataset_tag}.pt"
+    legacy_best_path = run_dir / "best.pt"
+    last_path = run_dir / f"last_{dataset_tag}.pt"
+    legacy_last_path = run_dir / "last.pt"
     accumulation = training_config.get("gradient_accumulation_steps", 1)
     max_steps = training_config.get("max_steps_per_epoch")
     started = time.time()
@@ -760,7 +773,8 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         }
         history.append(epoch_record)
         write_json(info_dir / "history.json", history)
-        plot_training_history(history, run_dir, epoch=epoch + 1)
+        write_json(legacy_info_dir / "history.json", history)
+        plot_training_history(history, run_dir, epoch=epoch + 1, dataset_tag=dataset_tag)
         print(
             f"[epoch {epoch + 1}/{training_config['epochs']}] "
             f"train_loss={epoch_record['train_classification_loss']:.4f} "
@@ -785,12 +799,14 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
                 str(tddi_pretrained_path) if tddi_pretrained_path is not None else None
             ),
         }
-        _save_checkpoint(run_dir / "last.pt", checkpoint)
+        _save_checkpoint(last_path, checkpoint)
+        _save_checkpoint(legacy_last_path, checkpoint)
         selection = float(validation[training_config["selection_metric"]])
         if selection > best_value:
             best_value = selection
             patience = 0
             _save_checkpoint(best_path, checkpoint)
+            _save_checkpoint(legacy_best_path, checkpoint)
         else:
             patience += 1
         write_run_summary(
@@ -886,13 +902,21 @@ def evaluate_checkpoint(
     )
     for row in per_class:
         row["original_class_id"] = int(statistics.label_values[row["class"]])
-    aggregate["checkpoints"] = checkpoint_paths
-    info_dir = resolve_run_dir(config) / "info"
-    write_json(info_dir / "test_metrics.json", aggregate)
-    _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
-    np.save(info_dir / "test_confusion_matrix.npy", confusion)
+    dataset_tag = resolve_dataset_tag(config)
     run_dir = resolve_run_dir(config)
-    plot_class_distribution(statistics.class_counts, statistics.label_values, run_dir)
+    info_dir = run_dir / f"info_{dataset_tag}"
+    legacy_info_dir = run_dir / "info"
+    info_dir.mkdir(parents=True, exist_ok=True)
+    legacy_info_dir.mkdir(parents=True, exist_ok=True)
+
+    write_json(info_dir / "test_metrics.json", aggregate)
+    write_json(legacy_info_dir / "test_metrics.json", aggregate)
+    _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
+    _write_per_class_csv(legacy_info_dir / "test_per_class.csv", per_class)
+    np.save(info_dir / "test_confusion_matrix.npy", confusion)
+    np.save(legacy_info_dir / "test_confusion_matrix.npy", confusion)
+
+    plot_class_distribution(statistics.class_counts, statistics.label_values, run_dir, dataset_tag=dataset_tag)
     plot_evaluation_figures(aggregate, per_class, confusion, run_dir)
     history_path = info_dir / "history.json"
     history = []

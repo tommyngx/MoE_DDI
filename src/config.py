@@ -90,6 +90,20 @@ def load_config(path: str | Path) -> dict[str, Any]:
     return config
 
 
+def resolve_dataset_tag(config: dict[str, Any]) -> str:
+    """Return a clean dataset folder tag (e.g. DDI2025, DeepDDI, etc.) for file naming."""
+    if config.get("data", {}).get("dataset_tag"):
+        return str(config["data"]["dataset_tag"])
+    if config.get("data", {}).get("dataset_name"):
+        return str(config["data"]["dataset_name"])
+    root_str = config.get("data", {}).get("root", "Dataset")
+    data_path = Path(root_str).expanduser()
+    name = data_path.name
+    if name.lower() in {"data", "dataset"} and data_path.parent.name and data_path.parent.name.lower() not in {"data", "dataset", "code", "projects"}:
+        name = data_path.parent.name
+    return name if name else "dataset"
+
+
 def resolve_project_path(config: dict[str, Any], value: str | Path) -> Path:
     path = Path(value)
     if path.is_absolute():

@@ -7,7 +7,7 @@ from plotting import (
 )
 
 
-def test_plot_training_history_writes_main_and_epoch_snapshot(tmp_path):
+def test_plot_training_history_writes_main_and_tagged_files(tmp_path):
     history = [
         {
             "epoch": 1,
@@ -18,9 +18,9 @@ def test_plot_training_history_writes_main_and_epoch_snapshot(tmp_path):
             "validation": {"loss": 2.1, "accuracy": 0.2, "macro_f1": 0.1},
         }
     ]
-    plot_training_history(history, tmp_path, epoch=1)
+    plot_training_history(history, tmp_path, epoch=1, dataset_tag="DDI2025")
     assert (tmp_path / "plots" / "training_curves.png").is_file()
-    assert (tmp_path / "plots" / "epochs" / "epoch_001.png").is_file()
+    assert (tmp_path / "training_DDI2025.png").is_file()
 
 
 def test_paper_plots_are_created(tmp_path):
