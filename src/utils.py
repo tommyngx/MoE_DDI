@@ -58,3 +58,14 @@ def write_json(path: str | Path, value: Any) -> None:
     with temporary.open("w", encoding="utf-8") as handle:
         json.dump(json_ready(value), handle, indent=2, sort_keys=True)
     os.replace(temporary, path)
+
+
+def write_yaml(path: str | Path, value: Any) -> None:
+    import yaml
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(json_ready(value), handle, sort_keys=False, allow_unicode=True)
+    os.replace(temporary, path)

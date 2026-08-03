@@ -38,7 +38,7 @@ def test_probability_ensemble_and_uncertainty_are_streamed():
             np.zeros(2, dtype=np.int64),
         )
     ]
-    aggregate, _, _ = evaluate_models(
+    aggregate, _, _, _, _ = evaluate_models(
         [ConstantModel([5.0, 0.0]), ConstantModel([0.0, 4.0])],
         stream,
         statistics,

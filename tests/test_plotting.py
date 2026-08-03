@@ -4,6 +4,7 @@ from plotting import (
     plot_class_distribution,
     plot_evaluation_figures,
     plot_training_history,
+    plot_tsne_top10_classes,
 )
 
 
@@ -48,3 +49,15 @@ def test_paper_plots_are_created(tmp_path):
     assert (info_dir / "confusion_matrix_normalized.png").is_file()
     assert (info_dir / "test_metrics.png").is_file()
     assert (info_dir / "router_specialization.png").is_file()
+
+
+def test_plot_tsne_top10_classes_creates_image(tmp_path):
+    embeddings = np.random.randn(50, 16)
+    labels = np.random.randint(0, 5, size=50)
+    class_counts = np.asarray([20, 15, 10, 3, 2])
+    out_path = plot_tsne_top10_classes(
+        embeddings, labels, class_counts, tmp_path, dataset_tag="DDI2025"
+    )
+    assert out_path is not None
+    assert out_path.is_file()
+    assert out_path.name == "tsne_top10_classes.png"

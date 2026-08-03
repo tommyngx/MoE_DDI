@@ -84,7 +84,15 @@ class ClassificationMetrics:
             where=(precision + recall) > 0,
         )
         observed = support > 0
+        macro_precision = float(precision[observed].mean()) if observed.any() else 0.0
+        macro_recall = float(recall[observed].mean()) if observed.any() else 0.0
         macro_f1 = float(f1[observed].mean()) if observed.any() else 0.0
+        weighted_precision = (
+            float(np.average(precision, weights=support)) if support.sum() else 0.0
+        )
+        weighted_recall = (
+            float(np.average(recall, weights=support)) if support.sum() else 0.0
+        )
         weighted_f1 = float(np.average(f1, weights=support)) if support.sum() else 0.0
         accuracy = float(true_positive.sum() / self.total) if self.total else 0.0
 
@@ -102,7 +110,11 @@ class ClassificationMetrics:
             "num_samples": int(self.total),
             "accuracy": accuracy,
             "micro_f1": accuracy,
+            "macro_precision": macro_precision,
+            "macro_recall": macro_recall,
             "macro_f1": macro_f1,
+            "weighted_precision": weighted_precision,
+            "weighted_recall": weighted_recall,
             "weighted_f1": weighted_f1,
             "ece": float(expected_calibration_error),
         }

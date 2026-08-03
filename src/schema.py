@@ -50,6 +50,14 @@ class DatasetSchema:
         with path.open("w", encoding="utf-8") as handle:
             json.dump(self.to_dict(), handle, indent=2)
 
+    def write_yaml(self, path: str | Path) -> None:
+        import yaml
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(self.to_dict(), handle, sort_keys=False, allow_unicode=True)
+
 
 def read_header(path: str | Path) -> list[str]:
     with Path(path).open("r", encoding="utf-8", newline="") as handle:

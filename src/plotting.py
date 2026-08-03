@@ -354,3 +354,93 @@ def plot_evaluation_figures(
         axis.grid(axis="y", alpha=0.25)
         _save_figure(figure, target_dir / "router_specialization.png")
         plt.close(figure)
+
+
+def plot_tsne_top10_classes(
+    embeddings: np.ndarray,
+    labels: np.ndarray,
+    class_counts: np.ndarray,
+    run_dir: str | Path,
+    *,
+    dataset_tag: str | None = None,
+    max_samples_per_class: int = 300,
+    seed: int = 42,
+) -> Path | None:
+    """Compute and save a 2D t-SNE scatter plot for the top 10 most frequent classes."""
+    if len(embeddings) == 0 or len(labels) == 0:
+        return None
+
+    try:
+        from sklearn.manifold import TSNE
+    except ImportError:
+        return None
+
+    target_dir = Path(run_dir)
+    if dataset_tag:
+        target_dir = target_dir / f"info_{dataset_tag}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Find top 10 most frequent classes
+    top10_classes = np.argsort(class_counts)[::-1][:10]
+
+    rng = np.random.default_rng(seed)
+    selected_indices = []
+    selected_labels = []
+
+    for cls in top10_classes:
+        cls_indices = np.where(labels == cls)[0]
+        if len(cls_indices) == 0:
+            continue
+        if len(cls_indices) > max_samples_per_class:
+            cls_indices = rng.choice(cls_indices, size=max_samples_per_class, replace=False)
+        selected_indices.extend(cls_indices)
+        selected_labels.extend([cls] * len(cls_indices))
+
+    if not selected_indices:
+        return None
+
+    sub_embeddings = np.asarray(embeddings)[selected_indices]
+    sub_labels = np.asarray(selected_labels)
+
+    n_samples = len(sub_embeddings)
+    perplexity = min(30, max(5, n_samples // 4))
+
+    tsne = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        random_state=seed,
+        init="pca",
+        learning_rate="auto",
+    )
+    embedding_2d = tsne.fit_transform(sub_embeddings)
+
+    figure, axis = plt.subplots(figsize=(10, 8))
+    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+
+    for idx, cls in enumerate(top10_classes):
+        mask = sub_labels == cls
+        if not np.any(mask):
+            continue
+        axis.scatter(
+            embedding_2d[mask, 0],
+            embedding_2d[mask, 1],
+            color=colors[idx % 10],
+            label=f"Class {cls} (n={class_counts[cls]:,})",
+            alpha=0.75,
+            edgecolors="none",
+            s=40,
+        )
+
+    title_text = "t-SNE Feature Representation (Top 10 DDI Classes)"
+    if dataset_tag:
+        title_text += f" - {dataset_tag}"
+    axis.set_title(title_text, fontsize=13, fontweight="bold", pad=12)
+    axis.set_xlabel("t-SNE Dimension 1", fontsize=11)
+    axis.set_ylabel("t-SNE Dimension 2", fontsize=11)
+    axis.legend(title="Top 10 Classes", bbox_to_anchor=(1.03, 1), loc="upper left", frameon=True)
+    axis.grid(True, linestyle="--", alpha=0.3)
+
+    output_path = target_dir / "tsne_top10_classes.png"
+    _save_figure(figure, output_path)
+    plt.close(figure)
+    return output_path

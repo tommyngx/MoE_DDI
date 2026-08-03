@@ -115,7 +115,11 @@ def write_run_summary(
             "loss",
             "accuracy",
             "micro_f1",
+            "macro_precision",
+            "macro_recall",
             "macro_f1",
+            "weighted_precision",
+            "weighted_recall",
             "weighted_f1",
             "top_1_accuracy",
             "top_3_accuracy",
@@ -125,6 +129,7 @@ def write_run_summary(
             "mean_variance",
             "mean_mutual_information",
             "mean_confidence",
+            "throughput_samples_per_sec",
         ]
         for key in preferred_order:
             if key in test_metrics:
@@ -138,11 +143,12 @@ def write_run_summary(
     lines.extend(
         [
             f"Best checkpoint: {run_dir / f'best_{tag}.pt'}",
-            f"Configuration: {run_dir / f'info_{tag}' / 'resolved_config.json'}",
-            f"Training history: {run_dir / f'info_{tag}' / 'history.json'}",
-            f"Test metrics: {run_dir / f'info_{tag}' / 'test_metrics.json'}",
+            f"Configuration: {run_dir / f'info_{tag}' / 'resolved_config.yaml'}",
+            f"Training history: {run_dir / f'info_{tag}' / 'history.yaml'}",
+            f"Test metrics: {run_dir / f'info_{tag}' / 'test_metrics.yaml'}",
             f"Training plot: {run_dir / f'training_{tag}.png'}",
             f"Class distribution plot: {run_dir / f'datadist_{tag}.png'}",
+            f"t-SNE plot: {run_dir / f'info_{tag}' / 'tsne_top10_classes.png'}",
         ]
     )
     lines.extend(

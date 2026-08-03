@@ -20,6 +20,7 @@ from plotting import (
     plot_class_distribution,
     plot_evaluation_figures,
     plot_training_history,
+    plot_tsne_top10_classes,
 )
 from preprocessing import (
     TrainStatistics,
@@ -27,7 +28,7 @@ from preprocessing import (
 )
 from reporting import write_run_summary
 from schema import DatasetSchema, assert_matching_schema, infer_schema
-from utils import select_device, set_seed, write_json
+from utils import select_device, set_seed, write_json, write_yaml
 
 
 def load_and_validate_schema(config: dict) -> DatasetSchema:
@@ -187,7 +188,7 @@ def evaluate_model(
     *,
     criterion: nn.Module | None = None,
 ) -> tuple[dict, list[dict], np.ndarray]:
-    return evaluate_models(
+    aggregate, per_class, confusion, _, _ = evaluate_models(
         [model],
         stream,
         statistics,
@@ -195,6 +196,7 @@ def evaluate_model(
         config,
         criterion=criterion,
     )
+    return aggregate, per_class, confusion
 
 
 def _entropy(probabilities: torch.Tensor) -> torch.Tensor:
@@ -211,7 +213,7 @@ def evaluate_models(
     config: dict,
     *,
     criterion: nn.Module | None = None,
-) -> tuple[dict, list[dict], np.ndarray]:
+) -> tuple[dict, list[dict], np.ndarray, np.ndarray, np.ndarray]:
     if not models:
         raise ValueError("At least one model is required for evaluation")
     for model in models:
@@ -241,6 +243,9 @@ def evaluate_models(
             )
             for name in ("high", "medium", "low")
         }
+    collected_embeddings = []
+    collected_labels = []
+
     with torch.inference_mode():
         for features, labels in stream:
             transformed = statistics.transform(
@@ -249,6 +254,8 @@ def evaluate_models(
             )
             inputs = torch.from_numpy(transformed).to(device)
             targets = torch.from_numpy(labels).to(device)
+            collected_embeddings.append(transformed)
+            collected_labels.append(labels)
             outputs = [_forward(member, inputs) for member in models]
             member_probabilities = torch.stack(
                 [torch.softmax(output.logits, dim=-1) for output in outputs],
@@ -316,7 +323,18 @@ def evaluate_models(
             values, _ = tracker.compute()
             values["coverage"] = values["num_samples"] / total_samples if total_samples else 0.0
             aggregate["confidence_strata"][name] = values
-    return aggregate, per_class, metrics.confusion.copy()
+
+    all_embeddings = (
+        np.concatenate(collected_embeddings, axis=0)
+        if collected_embeddings
+        else np.zeros((0, schema.num_features))
+    )
+    all_labels = (
+        np.concatenate(collected_labels, axis=0)
+        if collected_labels
+        else np.zeros((0,), dtype=np.int64)
+    )
+    return aggregate, per_class, metrics.confusion.copy(), all_embeddings, all_labels
 
 
 def _save_checkpoint(path: Path, payload: dict) -> None:
@@ -513,10 +531,10 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
     info_dir.mkdir(parents=True, exist_ok=True)
 
-    write_json(info_dir / "resolved_config.json", config)
-    schema.write_json(info_dir / "schema.json")
-    write_json(
-        info_dir / "label_mapping.json",
+    write_yaml(info_dir / "resolved_config.yaml", config)
+    schema.write_yaml(info_dir / "schema.yaml")
+    write_yaml(
+        info_dir / "label_mapping.yaml",
         {
             "internal_to_original": {
                 str(index): int(value)
@@ -541,8 +559,8 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
         f"parameters={parameter_summary['trainable']:,}",
         flush=True,
     )
-    write_json(
-        info_dir / "model_summary.json",
+    write_yaml(
+        info_dir / "model_summary.yaml",
         {
             "model": config["model"]["name"],
             "parameters": parameter_summary,
@@ -764,7 +782,7 @@ def train(config: dict, *, reset_seed: bool = True) -> Path:
             "elapsed_seconds": time.time() - started,
         }
         history.append(epoch_record)
-        write_json(info_dir / "history.json", history)
+        write_yaml(info_dir / "history.yaml", history)
         plot_training_history(history, run_dir, epoch=epoch + 1, dataset_tag=dataset_tag)
         print(
             f"[epoch {epoch + 1}/{training_config['epochs']}] "
@@ -880,7 +898,7 @@ def evaluate_checkpoint(
         seed=config["seed"],
         label_values=statistics.label_values,
     )
-    aggregate, per_class, confusion = evaluate_models(
+    aggregate, per_class, confusion, embeddings, labels = evaluate_models(
         models,
         stream,
         statistics,
@@ -895,7 +913,7 @@ def evaluate_checkpoint(
     info_dir = run_dir / f"info_{dataset_tag}"
     info_dir.mkdir(parents=True, exist_ok=True)
 
-    write_json(info_dir / "test_metrics.json", aggregate)
+    write_yaml(info_dir / "test_metrics.yaml", aggregate)
     _write_per_class_csv(info_dir / "test_per_class.csv", per_class)
     np.save(info_dir / "test_confusion_matrix.npy", confusion)
 
@@ -906,14 +924,35 @@ def evaluate_checkpoint(
         dataset_tag=dataset_tag,
     )
     plot_evaluation_figures(aggregate, per_class, confusion, run_dir, dataset_tag=dataset_tag)
-    history_path = info_dir / "history.json"
+    plot_tsne_top10_classes(
+        embeddings, labels, statistics.class_counts, run_dir, dataset_tag=dataset_tag
+    )
+
+    history_path = info_dir / "history.yaml"
+    if not history_path.is_file():
+        history_path = info_dir / "history.json"
     history = []
     if history_path.is_file():
-        history = json.loads(history_path.read_text(encoding="utf-8"))
+        if history_path.suffix == ".yaml":
+            import yaml
+
+            history = yaml.safe_load(history_path.read_text(encoding="utf-8")) or []
+        else:
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+
     summary_config = config
-    resolved_config_path = info_dir / "resolved_config.json"
+    resolved_config_path = info_dir / "resolved_config.yaml"
+    if not resolved_config_path.is_file():
+        resolved_config_path = info_dir / "resolved_config.json"
     if resolved_config_path.is_file():
-        summary_config = json.loads(resolved_config_path.read_text(encoding="utf-8"))
+        if resolved_config_path.suffix == ".yaml":
+            import yaml
+
+            summary_config = (
+                yaml.safe_load(resolved_config_path.read_text(encoding="utf-8")) or config
+            )
+        else:
+            summary_config = json.loads(resolved_config_path.read_text(encoding="utf-8"))
         summary_config["data"]["root"] = config["data"]["root"]
         summary_config["training"]["run_dir"] = str(run_dir)
     write_run_summary(
